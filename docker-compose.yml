@@ -1,0 +1,64 @@
+# Local 3-node CockroachDB cluster.
+#
+# Two reasons this exists rather than developing straight against CockroachDB Cloud:
+#  1. Cloud Basic is serverless -- there are no nodes to kill, so the resilience
+#     demo is impossible there. Here we can `docker kill` a node on camera.
+#  2. We own every cluster setting locally, including
+#     feature.vector_index.enabled, which may not be settable on a Basic
+#     (virtual) cluster.
+#
+# Insecure mode is deliberate and local-only. The deployed cluster uses
+# certificates and a scoped service account.
+
+name: recall
+
+services:
+  roach1:
+    image: cockroachdb/cockroach:latest
+    hostname: roach1
+    command: start --insecure --join=roach1,roach2,roach3 --advertise-addr=roach1
+    volumes:
+      - roach1-data:/cockroach/cockroach-data
+    ports:
+      - "26257:26257"   # SQL
+      - "8090:8080"     # DB Console
+    healthcheck:
+      test: ["CMD", "cockroach", "sql", "--insecure", "-e", "SELECT 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  roach2:
+    image: cockroachdb/cockroach:latest
+    hostname: roach2
+    command: start --insecure --join=roach1,roach2,roach3 --advertise-addr=roach2
+    volumes:
+      - roach2-data:/cockroach/cockroach-data
+    ports:
+      - "26258:26257"
+      - "8091:8080"
+
+  roach3:
+    image: cockroachdb/cockroach:latest
+    hostname: roach3
+    command: start --insecure --join=roach1,roach2,roach3 --advertise-addr=roach3
+    volumes:
+      - roach3-data:/cockroach/cockroach-data
+    ports:
+      - "26259:26257"
+      - "8092:8080"
+
+  # Runs once to bootstrap the cluster, then exits.
+  init:
+    image: cockroachdb/cockroach:latest
+    command: init --insecure --host=roach1
+    depends_on:
+      - roach1
+      - roach2
+      - roach3
+    restart: on-failure
+
+volumes:
+  roach1-data:
+  roach2-data:
+  roach3-data:

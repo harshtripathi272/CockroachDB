@@ -1,0 +1,11 @@
+node_modules/
+.env
+.env.*
+!.env.example
+dist/
+.next/
+cockroach-data/
+*.log
+.DS_Store
+certs/
+scratch_*
