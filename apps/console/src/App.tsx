@@ -4,13 +4,15 @@ import {
   Badge, Confidence, Id, LineageGraph, ThemeToggle,
   money, statusTone, useTheme, when,
 } from './components';
+import { Database } from './Database';
 
-type View = 'overview' | 'beliefs' | 'investigate' | 'resilience' | 'audit';
+type View = 'overview' | 'beliefs' | 'investigate' | 'database' | 'resilience' | 'audit';
 
 const VIEWS: Array<{ id: View; label: string }> = [
   { id: 'overview', label: 'Overview' },
   { id: 'beliefs', label: 'Beliefs' },
   { id: 'investigate', label: 'Investigate' },
+  { id: 'database', label: 'CockroachDB' },
   { id: 'resilience', label: 'Resilience' },
   { id: 'audit', label: 'Audit log' },
 ];
@@ -109,6 +111,7 @@ export default function App() {
             <Investigate beliefs={beliefs} selected={selected} setSelected={setSelected}
                          onChanged={refresh} />
           )}
+          {view === 'database' && <Database health={health} />}
           {view === 'resilience' && <Resilience health={health} />}
           {view === 'audit' && <AuditLog />}
         </div>

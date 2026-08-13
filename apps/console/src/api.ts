@@ -68,6 +68,38 @@ export interface AuditEntry {
   detail: Record<string, unknown> | null;
 }
 
+
+export interface RangeInfo {
+  id: number;
+  replicas: number[];
+  leaseHolder: number;
+  span: string;
+}
+
+export interface RangesResponse {
+  available: boolean;
+  reason?: string;
+  replicationFactor: number;
+  ranges: RangeInfo[];
+  perNode: Array<{ node: number; replicas: number; leases: number }>;
+}
+
+export interface QueryPlan {
+  id: string;
+  label: string;
+  why: string;
+  sql: string;
+  plan: string;
+  usesVectorIndex: boolean;
+  fullScan: boolean;
+  tookMs: number;
+}
+
+export interface SchemaResponse {
+  tables: Array<{ table_name: string; estimated_row_count: number }>;
+  vectorIndex: { name: string; columns: string[]; definition: string };
+}
+
 export const api = {
   health: () => get<Health>('/api/health'),
 
@@ -105,6 +137,12 @@ export const api = {
     get<{ at: string; mechanism: string; beliefs: Belief[] }>(
       `/api/timeline?at=${encodeURIComponent(at.toISOString())}`,
     ),
+
+  ranges: () => get<RangesResponse>('/api/crdb/ranges'),
+
+  plans: () => get<{ plans: QueryPlan[] }>('/api/crdb/plans'),
+
+  schema: () => get<SchemaResponse>('/api/crdb/schema'),
 
   audit: (limit = 50) => get<{ entries: AuditEntry[] }>(`/api/audit?limit=${limit}`),
 };
