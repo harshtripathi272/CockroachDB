@@ -25,7 +25,9 @@
     "api": "node services/api/server.ts",
     "seed": "node scripts/seed.ts --target=local --reset",
     "dev": "npm run dev --prefix apps/console",
-    "build": "npm run build --prefix apps/console"
+    "build": "npm run build --prefix apps/console",
+    "chaos": "bash chaos/kill-node.sh",
+    "outbox": "node services/outbox/drainer.ts"
   },
   "dependencies": {
     "pg": "^8.13.1",
