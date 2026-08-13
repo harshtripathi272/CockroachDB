@@ -20,22 +20,41 @@ const db = new Db({
 });
 
 /**
- * Bedrock when credentials are present, deterministic fake otherwise. The
- * console must still be demoable if Bedrock model access is pending approval --
- * a blocked model should not take the whole product down.
+ * Bedrock when it actually works, deterministic fake otherwise.
+ *
+ * Deliberately not gated on `AWS_ACCESS_KEY_ID` being set: the SDK's default
+ * credential chain also reads ~/.aws/credentials, IAM roles and SSO, so
+ * checking env vars would report "no credentials" on a perfectly configured
+ * machine. The only honest test is to make a real call.
+ *
+ * The probe runs once at startup and the result is cached. A blocked model must
+ * not take the whole console down -- the governance and lineage features have
+ * nothing to do with embeddings, and they are the point of the product.
  */
-function makeEmbedder(): Embedder {
-  if (process.env.AWS_ACCESS_KEY_ID || process.env.AWS_PROFILE) {
-    return new BedrockEmbedder({
-      region: process.env.AWS_REGION ?? 'us-east-1',
-      modelId: process.env.BEDROCK_EMBED_MODEL,
-    });
+async function makeEmbedder(): Promise<Embedder> {
+  const region = process.env.AWS_REGION ?? 'ap-south-1';
+  const bedrock = new BedrockEmbedder({ region, modelId: process.env.BEDROCK_EMBED_MODEL });
+
+  try {
+    await bedrock.embed('recall startup probe');
+    console.log(`[recall] Bedrock embeddings live (${region})`);
+    return bedrock;
+  } catch (err) {
+    const e = err as Error;
+    console.warn(
+      `[recall] Bedrock unavailable (${e.name}: ${e.message.slice(0, 120)})\n` +
+      `[recall] falling back to deterministic FakeEmbedder — lineage, blast radius\n` +
+      `[recall] and governance are unaffected; only semantic ranking is degraded.`,
+    );
+    return new FakeEmbedder();
   }
-  console.warn('[recall] no AWS credentials found - using deterministic FakeEmbedder');
-  return new FakeEmbedder();
 }
 
-const recall = new Recall({ db, embedder: makeEmbedder(), actor: 'recall-console@v1' });
+const recall = new Recall({
+  db,
+  embedder: await makeEmbedder(),
+  actor: 'recall-console@v1',
+});
 
 // ---------------------------------------------------------------------------
 // Routes
