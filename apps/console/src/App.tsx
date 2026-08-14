@@ -5,11 +5,13 @@ import {
   money, statusTone, useTheme, when,
 } from './components';
 import { Database } from './Database';
+import { Agent } from './Agent';
 
-type View = 'overview' | 'beliefs' | 'investigate' | 'database' | 'resilience' | 'audit';
+type View = 'overview' | 'agent' | 'beliefs' | 'investigate' | 'database' | 'resilience' | 'audit';
 
 const VIEWS: Array<{ id: View; label: string }> = [
   { id: 'overview', label: 'Overview' },
+  { id: 'agent', label: 'Live agent' },
   { id: 'beliefs', label: 'Beliefs' },
   { id: 'investigate', label: 'Investigate' },
   { id: 'database', label: 'CockroachDB' },
@@ -104,6 +106,7 @@ export default function App() {
             <Overview counts={counts} health={health} decisions={decisions}
                       beliefs={beliefs} onInvestigate={investigate} />
           )}
+          {view === 'agent' && <Agent onChanged={refresh} />}
           {view === 'beliefs' && (
             <Beliefs beliefs={beliefs} setBeliefs={setBeliefs} onInvestigate={investigate} />
           )}

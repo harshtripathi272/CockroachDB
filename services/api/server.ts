@@ -8,6 +8,8 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { Db, FakeEmbedder, BedrockEmbedder, Recall, type Embedder } from '../../packages/recall-core/src/index.ts';
 import { loadEnv, resolveConnectionString, TENANT_ID } from '../../scripts/env.ts';
+import { SupportAgent } from '../../apps/agent/agent.ts';
+import { BedrockReasoner, PolicyReasoner, type Reasoner } from '../../apps/agent/reasoner.ts';
 
 loadEnv();
 
@@ -54,6 +56,38 @@ const recall = new Recall({
   db,
   embedder: await makeEmbedder(),
   actor: 'recall-console@v1',
+});
+
+/**
+ * Claude via Bedrock when it is reachable, deterministic policy engine
+ * otherwise. Probed the same way as the embedder -- by making a real call,
+ * not by guessing from environment variables.
+ *
+ * The deterministic reasoner is not merely a fallback: decision replay has to
+ * be reproducible, and a sampled model is not.
+ */
+async function makeReasoner(): Promise<Reasoner> {
+  const region = process.env.AWS_REGION ?? 'ap-south-1';
+  const modelId = process.env.BEDROCK_CHAT_MODEL ?? 'apac.anthropic.claude-3-5-sonnet-20241022-v2:0';
+  const bedrock = new BedrockReasoner(region, modelId);
+
+  try {
+    await bedrock.decide('ping', []);
+    console.log(`[recall] agent reasoning on ${modelId}`);
+    return bedrock;
+  } catch (err) {
+    console.warn(
+      `[recall] Bedrock reasoning unavailable (${(err as Error).name}) - ` +
+      `using deterministic policy engine`,
+    );
+    return new PolicyReasoner();
+  }
+}
+
+const agent = new SupportAgent({
+  recall,
+  reasoner: await makeReasoner(),
+  tenantId: TENANT_ID,
 });
 
 // ---------------------------------------------------------------------------
@@ -264,6 +298,22 @@ route('GET', '/api/timeline', async (_p, url) => {
 
   // Which mechanism answered matters, so the UI can say so honestly.
   return { at: at.toISOString(), mechanism: withinGc ? 'AS OF SYSTEM TIME' : 'bitemporal', beliefs };
+});
+
+/**
+ * Run the agent live.
+ *
+ * This is the whole product in one request: recall -> reason -> atomic commit
+ * -> optional reflection. The response returns every intermediate step, because
+ * the console shows the agent's working rather than just its answer.
+ */
+route('POST', '/api/agent/handle', async (_p, _u, body) => {
+  const { request, reflect } = (body ?? {}) as { request?: string; reflect?: boolean };
+  if (!request || request.trim().length < 3) {
+    throw new HttpError(400, 'request text is required');
+  }
+  const result = await agent.handle(request.trim(), { reflect: reflect ?? false });
+  return result;
 });
 
 /* -------------------------------------------------------------------------

@@ -50,10 +50,16 @@ SELECT
   d.committed_at,
   -- hops alternate belief->decision->belief->..., so a decision is always at an
   -- odd hop count. Generation 0 = the belief drove it directly; 1+ = downstream.
-  (t.hops - 1) // 2 AS generation
+  --
+  -- min() because a decision can be reached by more than one path: an agent
+  -- that cites BOTH the falsified belief and something inferred from it is
+  -- reachable at two depths, and would otherwise appear twice. We report the
+  -- shortest path -- its most direct link to the falsified belief.
+  min((t.hops - 1) // 2) AS generation
 FROM taint t
 JOIN decision d
   ON d.tenant_id = $1::UUID AND d.id = t.id
 WHERE t.kind = 'decision'
   AND d.status = 'committed'
+GROUP BY d.id, d.action, d.payload, d.rationale, d.status, d.actor, d.committed_at
 ORDER BY generation ASC, d.committed_at ASC;

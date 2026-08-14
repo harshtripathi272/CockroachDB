@@ -332,11 +332,17 @@ export class Recall {
              JOIN edges e ON e.src_kind = t.kind AND e.src_id = t.id
             WHERE t.hops < 32
        )
+       -- A decision can be reached by more than one path: an agent that cites
+       -- both the false belief AND something inferred from it shows up at two
+       -- depths. Group to the SHORTEST path, so each decision appears once at
+       -- its most direct link to the falsified belief.
        SELECT d.id, d.action, d.payload, d.rationale, d.status, d.actor,
-              d.committed_at AS "committedAt", (t.hops - 1) // 2 AS generation
+              d.committed_at AS "committedAt",
+              min((t.hops - 1) // 2) AS generation
          FROM taint t
          JOIN decision d ON d.tenant_id = $1::UUID AND d.id = t.id
         WHERE t.kind = 'decision' AND d.status = 'committed'
+        GROUP BY d.id, d.action, d.payload, d.rationale, d.status, d.actor, d.committed_at
         ORDER BY generation ASC, d.committed_at ASC`,
       [tenantId, beliefId],
     );

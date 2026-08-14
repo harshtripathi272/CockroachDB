@@ -2,6 +2,9 @@ import { test, before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { Db, FakeEmbedder, Recall } from '../packages/recall-core/src/index.ts';
+import { loadEnv, resolveConnectionString } from '../scripts/env.ts';
+
+loadEnv();
 
 /**
  * Evidence for the claim that a real database is doing real work here.
@@ -18,9 +21,9 @@ import { Db, FakeEmbedder, Recall } from '../packages/recall-core/src/index.ts';
  * database is.
  */
 
-const CONN =
-  process.env.LOCAL_DATABASE_URL ??
-  'postgresql://root@localhost:26257/recall?sslmode=disable';
+// Honours RECALL_TARGET so the suite runs against either the local
+// 3-node cluster or CockroachDB Cloud.
+const CONN = resolveConnectionString(process.env.RECALL_TARGET ?? 'local');
 
 let db: Db;
 let recall: Recall;

@@ -19,6 +19,22 @@ import type { PoolClient, QueryResultRow } from 'pg';
 /** CockroachDB raises this SQLSTATE when a transaction must be retried. */
 const SERIALIZATION_FAILURE = '40001';
 
+/**
+ * Is this error one the client is expected to retry?
+ *
+ * Normally SQLSTATE 40001 is sufficient. The message check is a deliberate
+ * safety net: retryable conditions (WriteTooOldError, RETRY_SERIALIZABLE,
+ * TransactionRetryWithProtoRefreshError) occasionally surface through a driver
+ * or proxy layer without the code preserved, and treating one of those as fatal
+ * turns a transient conflict into a user-visible failure.
+ */
+function isRetryable(err: unknown): boolean {
+  const e = err as { code?: string; message?: string };
+  if (e?.code === SERIALIZATION_FAILURE) return true;
+  return /restart transaction|TransactionRetryWithProtoRefresh|WriteTooOld|RETRY_SERIALIZABLE/i
+    .test(e?.message ?? '');
+}
+
 /** pg returns numeric/decimal as string by default; we want floats as numbers. */
 pg.types.setTypeParser(1700, (v: string) => Number.parseFloat(v)); // NUMERIC
 pg.types.setTypeParser(701, (v: string) => Number.parseFloat(v));  // FLOAT8
@@ -33,9 +49,15 @@ export interface DbConfig {
 export class Db {
   private pool: pg.Pool;
   private maxRetries: number;
+  /** Observability: how many transactions had to be retried, and how often. */
+  readonly stats = { transactions: 0, retries: 0, exhausted: 0 };
 
   constructor(cfg: DbConfig) {
-    this.maxRetries = cfg.maxRetries ?? 5;
+    // 10 rather than 5. Five was tuned against a local cluster where a retry
+    // costs ~1ms; against CockroachDB Cloud a round trip is ~40ms, so the same
+    // contention burns the budget before the queue drains and the error
+    // surfaces to a user. Contention is a function of latency, not just load.
+    this.maxRetries = cfg.maxRetries ?? 10;
     this.pool = new pg.Pool({
       connectionString: cfg.connectionString,
       application_name: cfg.applicationName ?? 'recall',
@@ -68,6 +90,7 @@ export class Db {
    */
   async inTransaction<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
     let lastErr: unknown;
+    this.stats.transactions++;
 
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
       const client = await this.pool.connect();
@@ -81,15 +104,19 @@ export class Db {
           /* connection may already be dead; the pool will discard it */
         });
 
-        const code = (err as { code?: string })?.code;
-        if (code !== SERIALIZATION_FAILURE || attempt === this.maxRetries) {
+        if (!isRetryable(err)) throw err;
+        if (attempt === this.maxRetries) {
+          this.stats.exhausted++;
           throw err;
         }
-        lastErr = err;
 
-        // Full jitter: 2^attempt * 50ms, randomised to avoid retry convoys
-        // when many agents contend on the same belief.
-        const ceiling = 2 ** attempt * 50;
+        lastErr = err;
+        this.stats.retries++;
+
+        // Full jitter, capped. Uncapped 2^attempt reaches 51s by attempt 10,
+        // which is worse than failing; capped at 1s the whole budget is a few
+        // seconds and the queue still drains.
+        const ceiling = Math.min(2 ** attempt * 50, 1000);
         await sleep(Math.random() * ceiling);
       } finally {
         client.release();

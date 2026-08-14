@@ -100,6 +100,24 @@ export interface SchemaResponse {
   vectorIndex: { name: string; columns: string[]; definition: string };
 }
 
+export interface AgentVerdict {
+  action: string;
+  approve: boolean;
+  payload: Record<string, unknown>;
+  rationale: string;
+  used: Array<{ beliefId: string; weight: number }>;
+  reasoner: string;
+}
+
+export interface AgentResult {
+  request: string;
+  recalled: Belief[];
+  verdict: AgentVerdict;
+  decisionId: string | null;
+  reflection: { beliefId: string; claim: string } | null;
+  timings: { recallMs: number; reasonMs: number; commitMs: number };
+}
+
 export const api = {
   health: () => get<Health>('/api/health'),
 
@@ -137,6 +155,9 @@ export const api = {
     get<{ at: string; mechanism: string; beliefs: Belief[] }>(
       `/api/timeline?at=${encodeURIComponent(at.toISOString())}`,
     ),
+
+  runAgent: (request: string, reflect: boolean) =>
+    post<AgentResult>('/api/agent/handle', { request, reflect }),
 
   ranges: () => get<RangesResponse>('/api/crdb/ranges'),
 
