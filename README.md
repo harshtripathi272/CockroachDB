@@ -248,6 +248,35 @@ minutes. Recall therefore keeps an explicit bitemporal history
 as a fast path inside that window. And mutual recursion between two CTEs is not
 permitted — both hop types have to be flattened into a single edge relation.
 
+## Prior art surveyed
+
+Before designing this we looked at the agent-memory landscape, because building
+something already solved would have been a waste of everyone's time. Recorded
+here for transparency — **no code from any of these was used**, and every line in
+this repository was written during the hackathon submission period.
+
+| Project | What we learned |
+|---|---|
+| [mem0](https://mem0.ai) | Extraction-first memory; the market leader by adoption. Confirmed that storage-and-retrieval is a solved, crowded space. |
+| [Zep / Graphiti](https://arxiv.org/abs/2501.13956) | Temporal knowledge graphs, strongest published results on temporal reasoning. Pushed us to treat time as first-class. |
+| MemOS | Provenance and versioning metadata on memory units — which told us that typed, provenanced memory is **not** novel on its own, and our originality had to come from somewhere else. |
+| [innernet.live](https://innernet.live) | Exposing memory over a single MCP endpoint so many tools share it. We adopted the *shape* of that idea; the differentiator we added is that the governance rules live at the protocol boundary. |
+| [openmemory](https://github.com/Bilal140202/openmemory) | Layered memory with disclosure classes and confidence-based contradiction handling. Its multi-datastore approach (vector DB + graph DB + extraction layer) is precisely what we chose *not* to do. |
+
+The last row is the design decision this project rests on. Those systems compose
+four or five datastores to get vector search, graph traversal, provenance and
+history. Recall does all of it in **one** database, in one transaction — which is
+the entire argument for putting agent memory in a distributed SQL database rather
+than beside one.
+
+The MCP server here implements the open
+[Model Context Protocol](https://modelcontextprotocol.io) specification
+(2025-06-18) directly. MCP is an open standard; implementing it is independent of
+any product that also happens to use it.
+
 ## Licence
 
 Apache-2.0. See [LICENSE](LICENSE).
+
+Dependencies: AWS SDK (Apache-2.0), `pg` (MIT), `dotenv` (BSD-2-Clause),
+TypeScript (Apache-2.0), React (MIT), Vite (MIT) — all permissive and compatible.
