@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "recall": {
+      "command": "node",
+      "args": ["services/mcp/server.ts"],
+      "env": {
+        "RECALL_TARGET": "local",
+        "RECALL_MCP_ACTOR": "claude-code@local"
+      }
+    }
+  }
+}

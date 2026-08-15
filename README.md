@@ -120,18 +120,80 @@ $9,870 of exposure, in 23 ms**.
 
 ## Requirement coverage
 
-**CockroachDB tools — 4 of 4** (2 required)
+Stated honestly — what is wired and working today, versus what is not.
 
-| Tool | How it is used |
+**CockroachDB tools — 2 of 4 in use** (2 required)
+
+| Tool | Status |
 |---|---|
-| Distributed Vector Indexing | `belief_recall_idx ON belief (tenant_id, status, kind, embedding vector_cosine_ops)` — filtered ANN over beliefs |
-| Cloud Managed MCP Server | the agent's memory access path; read-only default plus explicit write consent is the governance story |
-| ccloud CLI | provisioning, `-o json` health feed, chaos scripting |
-| Agent Skills Repo | the agent diagnoses its *own* memory layer using the observability skills |
+| Distributed Vector Indexing | ✅ **In use.** `belief_recall_idx ON belief (tenant_id, status, kind, embedding vector_cosine_ops)` — filtered ANN. The console runs `EXPLAIN` live so index use is verifiable, not asserted. |
+| Agent Skills Repo | ✅ **Installed** (34 skills, `npx skills add cockroachlabs/cockroachdb-skills`). |
+| Cloud Managed MCP Server | ⚠️ **Not yet wired.** Recall exposes *its own* MCP server (see above), which is a different thing — we do not yet consume CockroachDB's. |
+| ccloud CLI | ⚠️ **Not yet used.** |
 
-**AWS services — 4** (1 required): Bedrock (Claude + Titan Text Embeddings V2),
-Lambda (changefeed-driven consolidation), S3 (evidence artifacts), EC2/ECS (the
-3-node cluster for the resilience demo).
+**AWS services — 0 working** (1 required)
+
+| Service | Status |
+|---|---|
+| Bedrock (Titan embeddings + Claude reasoning) | ⚠️ **Coded, not working.** Every `InvokeModel` returns `ValidationException: Operation not allowed` — an account-level first-invoke gate. The app probes at startup and degrades to a deterministic embedder and policy engine, so nothing breaks, but semantic ranking and LLM reasoning are currently simulated. |
+| S3 (evidence artifacts) | ❌ Not implemented. `source_ref` values are illustrative paths. |
+| Lambda / API Gateway (changefeed consolidation) | ❌ Not implemented. |
+| EC2/ECS (3-node cluster for the chaos demo) | ❌ Runs locally in Docker, not deployed. |
+
+### What is simulated
+
+Being explicit, because a demo that hides this is worse than one that admits it:
+
+- **Embeddings** fall back to a deterministic hash when Bedrock is unavailable.
+  The vector index, its query plan and the prefix filtering are all real; the
+  vectors themselves are not semantic in that mode.
+- **Agent reasoning** falls back to a deterministic policy engine. That engine is
+  also the reference implementation for decision replay, which has to be
+  reproducible — a sampled model is not.
+- **Outbox delivery** logs rather than calling a payment or mail provider.
+
+Everything else — the schema, transactions, lineage, blast radius, retry
+handling, TTL, time travel, replica placement and the node-failure behaviour —
+runs against a real CockroachDB cluster and is covered by the test suite.
+
+
+## Connect any agent to it (MCP)
+
+Recall speaks [Model Context Protocol](https://modelcontextprotocol.io), so any
+MCP-capable agent — Claude Code, Cursor, Cline — can share the same memory:
+
+```bash
+claude mcp add recall -- node services/mcp/server.ts
+```
+
+Or use the checked-in `.mcp.json`, which Claude Code picks up automatically.
+
+Six tools: `recall_search`, `recall_remember`, `recall_decide`,
+`recall_trace_blast_radius`, `recall_retract`, `recall_timeline`.
+
+The reason this matters is not memory sharing — plenty of products do that. It is
+that **the governance rules live at the protocol boundary, not inside one app**:
+
+- `recall_remember` refuses a belief with no provenance
+- `recall_decide` refuses an action that cites no beliefs
+- `recall_search` never returns quarantined or retracted beliefs
+
+So ten agents from four different vendors writing to the same memory are all held
+to one audit standard, and a single `recall_trace_blast_radius` call covers all of
+them. An application-level guarantee cannot do that.
+
+Driven end to end from an external agent, this is the whole product in six calls:
+
+```
+1) store a belief (provenance mandatory)      -> fc198e4e, confidence 0.9
+2) record an action citing it                 -> f7da7c76, committed
+3) agent generalises from its own action      -> a595fcff  (this is how drift starts)
+4) a second action driven by that inference   -> 237377a2
+5) the original belief turns out to be FALSE  -> "2 past decisions used this belief"
+6) blast radius                               -> gen 0: approve_upgrade (7740)
+                                                 gen 1: approve_upgrade (9004)
+7) still searchable?                          -> no
+```
 
 ## Running it
 
@@ -154,6 +216,12 @@ Run the tests:
 
 ```bash
 npm test
+```
+
+The suite honours `RECALL_TARGET`, so it runs against either cluster:
+
+```bash
+RECALL_TARGET=cloud npm test
 ```
 
 ## What we learned about CockroachDB

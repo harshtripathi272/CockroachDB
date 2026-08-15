@@ -27,7 +27,8 @@
     "dev": "npm run dev --prefix apps/console",
     "build": "npm run build --prefix apps/console",
     "chaos": "bash chaos/kill-node.sh",
-    "outbox": "node services/outbox/drainer.ts"
+    "outbox": "node services/outbox/drainer.ts",
+    "mcp": "node services/mcp/server.ts"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock": "^3.1110.0",
