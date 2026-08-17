@@ -14,3 +14,10 @@ scratch_*
 .models/
 .scratch/
 .commandcode
+
+# stray build/deploy artefacts
+.npm-cache-fresh/
+package-lock.json.bak
+deploy/*.zip
+deploy/last-deploy.log
+apps/console/package-lock.json
