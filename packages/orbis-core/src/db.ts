@@ -42,6 +42,20 @@ function isRetryable(err: unknown): boolean {
 pg.types.setTypeParser(1700, (v: string) => Number.parseFloat(v));
 pg.types.setTypeParser(701, (v: string) => Number.parseFloat(v));
 
+// INT8 is also returned as a string, because a 64-bit integer does not fit in a
+// JS number. In CockroachDB `INT` *is* INT8, so every count(*)::INT arrives as
+// "27" rather than 27 — which serialises into JSON as a string and quietly
+// breaks any arithmetic downstream.
+//
+// Parsing is safe here because these are row counts and durations, not
+// snowflake ids: nothing in this schema uses a bigint key. Values beyond
+// Number.MAX_SAFE_INTEGER are left as strings rather than silently losing
+// precision.
+pg.types.setTypeParser(20, (v: string) => {
+  const n = Number(v);
+  return Number.isSafeInteger(n) ? n : v;
+});
+
 export interface DbConfig {
   connectionString: string;
   maxRetries?: number;
