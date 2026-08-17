@@ -1,554 +1,652 @@
+import { createServer } from 'node:http';
+import type { IncomingMessage, ServerResponse } from 'node:http';
+import { readFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { join, extname, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { Orbis } from '../../packages/orbis-core/src/index.ts';
+import { logToolCall } from '../../packages/orbis-core/src/index.ts';
+import { createMcpHandler } from '../mcp/http.ts';
+import { TOOLS, TOOLS_BY_NAME } from '../mcp/tools.ts';
+import { loadEnv, resolveConnectionString } from '../../scripts/env.mjs';
+
 /**
- * Recall API.
+ * The Orbis server.
  *
- * Deliberately plain node:http with a small router rather than a framework:
- * the handler signature stays trivially wrappable for AWS Lambda behind API
- * Gateway, which is how this is deployed (and keeps it inside the free tier).
+ * Plain node:http rather than a framework, for two reasons: it stays trivially
+ * wrappable for a serverless handler, and the routing here is simple enough
+ * that a router would be more code than it saves.
+ *
+ * Three surfaces share one process:
+ *   /api/mcp        the universal MCP endpoint every agent connects to
+ *   /api/v1         REST, bearer-authenticated, for scripts and integrations
+ *   /api/console    what the web console talks to
  */
-import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { Db, FakeEmbedder, BedrockEmbedder, Recall, type Embedder } from '../../packages/recall-core/src/index.ts';
-import { loadEnv, resolveConnectionString, TENANT_ID } from '../../scripts/env.ts';
-import { SupportAgent } from '../../apps/agent/agent.ts';
-import { BedrockReasoner, PolicyReasoner, type Reasoner } from '../../apps/agent/reasoner.ts';
 
 loadEnv();
 
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const PORT = Number(process.env.PORT ?? 8787);
-const TARGET = process.env.RECALL_TARGET ?? 'local';
+const TARGET = process.env.ORBIS_TARGET ?? 'local';
+const CONSOLE_DIST = join(ROOT, 'apps', 'console', 'dist');
 
-const db = new Db({
+const orbis = new Orbis({
   connectionString: resolveConnectionString(TARGET),
-  applicationName: 'recall-api',
+  applicationName: 'orbis-api',
+  embedder: {
+    preferred: process.env.ORBIS_EMBEDDER,
+    awsRegion: process.env.AWS_REGION,
+    bedrockModel: process.env.BEDROCK_EMBED_MODEL,
+  },
 });
 
-/**
- * Bedrock when it actually works, deterministic fake otherwise.
- *
- * Deliberately not gated on `AWS_ACCESS_KEY_ID` being set: the SDK's default
- * credential chain also reads ~/.aws/credentials, IAM roles and SSO, so
- * checking env vars would report "no credentials" on a perfectly configured
- * machine. The only honest test is to make a real call.
- *
- * The probe runs once at startup and the result is cached. A blocked model must
- * not take the whole console down -- the governance and lineage features have
- * nothing to do with embeddings, and they are the point of the product.
- */
-async function makeEmbedder(): Promise<Embedder> {
-  const region = process.env.AWS_REGION ?? 'ap-south-1';
-  const bedrock = new BedrockEmbedder({ region, modelId: process.env.BEDROCK_EMBED_MODEL });
-
-  try {
-    await bedrock.embed('recall startup probe');
-    console.log(`[recall] Bedrock embeddings live (${region})`);
-    return bedrock;
-  } catch (err) {
-    const e = err as Error;
-    console.warn(
-      `[recall] Bedrock unavailable (${e.name}: ${e.message.slice(0, 120)})\n` +
-      `[recall] falling back to deterministic FakeEmbedder — lineage, blast radius\n` +
-      `[recall] and governance are unaffected; only semantic ranking is degraded.`,
-    );
-    return new FakeEmbedder();
-  }
-}
-
-const recall = new Recall({
-  db,
-  embedder: await makeEmbedder(),
-  actor: 'recall-console@v1',
-});
+const choice = await orbis.ready();
 
 /**
- * Claude via Bedrock when it is reachable, deterministic policy engine
- * otherwise. Probed the same way as the embedder -- by making a real call,
- * not by guessing from environment variables.
+ * A development account so the console is usable without a login flow.
  *
- * The deterministic reasoner is not merely a fallback: decision replay has to
- * be reproducible, and a sampled model is not.
+ * Deliberately gated on ORBIS_DEV: it bypasses token auth entirely, which is
+ * correct for a local cluster on a laptop and would be a severe hole anywhere
+ * else. Production requires a real bearer token on every request.
  */
-async function makeReasoner(): Promise<Reasoner> {
-  const region = process.env.AWS_REGION ?? 'ap-south-1';
-  const modelId = process.env.BEDROCK_CHAT_MODEL ?? 'apac.anthropic.claude-3-5-sonnet-20241022-v2:0';
-  const bedrock = new BedrockReasoner(region, modelId);
+const DEV = process.env.ORBIS_DEV !== '0';
+let devAccountId: string | null = null;
 
-  try {
-    await bedrock.decide('ping', []);
-    console.log(`[recall] agent reasoning on ${modelId}`);
-    return bedrock;
-  } catch (err) {
-    console.warn(
-      `[recall] Bedrock reasoning unavailable (${(err as Error).name}) - ` +
-      `using deterministic policy engine`,
-    );
-    return new PolicyReasoner();
-  }
+if (DEV) {
+  const row = await orbis.db.one(
+    `INSERT INTO account (email, display_name) VALUES ($1,$2)
+     ON CONFLICT (email) DO UPDATE SET display_name = excluded.display_name
+     RETURNING id`,
+    [process.env.ORBIS_DEV_EMAIL ?? 'you@orbis.local', process.env.ORBIS_DEV_NAME ?? 'You'],
+  );
+  devAccountId = row!.id;
+  await orbis.db.query(
+    `INSERT INTO workspace (account_id, slug, name, description, is_default)
+     VALUES ($1,'personal','Personal','Everything without a home yet.',true)
+     ON CONFLICT (account_id, slug) DO NOTHING`,
+    [devAccountId],
+  );
 }
 
-const agent = new SupportAgent({
-  recall,
-  reasoner: await makeReasoner(),
-  tenantId: TENANT_ID,
+const mcp = createMcpHandler({
+  orbis,
+  allowedOrigins: (process.env.ORBIS_ALLOWED_ORIGINS ?? '*').split(','),
+  devAccountId: null, // the MCP endpoint always requires a real token
 });
 
 // ---------------------------------------------------------------------------
-// Routes
-// ---------------------------------------------------------------------------
-type Handler = (
-  params: Record<string, string>,
-  url: URL,
-  body: unknown,
-) => Promise<unknown>;
 
-const routes: Array<{ method: string; pattern: RegExp; keys: string[]; handler: Handler }> = [];
-
-function route(method: string, path: string, handler: Handler) {
-  const keys: string[] = [];
-  const pattern = new RegExp(
-    '^' + path.replace(/:(\w+)/g, (_, k) => { keys.push(k); return '([^/]+)'; }) + '$',
-  );
-  routes.push({ method, pattern, keys, handler });
-}
-
-/**
- * Health, for the chaos panel.
- *
- * The authoritative signal is deliberately NOT node topology -- it is whether a
- * real memory read still succeeds, and how long it took. That is the claim this
- * project is actually making: when a node dies, memory keeps answering. A
- * health check that depended on an admin interface would be measuring the wrong
- * thing, and would report "unhealthy" for a cluster that is serving fine.
- *
- * Topology is read opportunistically on top of that. `crdb_internal` is
- * restricted in v26.2+, so it needs `allow_unsafe_internals`, scoped with SET
- * LOCAL to a single transaction so the flag never leaks to a pooled connection
- * that serves user queries. On CockroachDB Cloud Basic it is unavailable
- * entirely (serverless -- there are no nodes to report), and the panel simply
- * renders without it.
- */
-route('GET', '/api/health', async () => {
-  const started = Date.now();
-  let beliefCount = 0;
-  let ok = true;
-  let error: string | undefined;
+const server = createServer(async (req, res) => {
+  const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
+  const path = url.pathname;
 
   try {
-    const [row] = await db.query<{ count: string }>(
-      `SELECT count(*)::STRING AS count FROM belief WHERE tenant_id = $1`, [TENANT_ID],
-    );
-    beliefCount = Number(row.count);
-  } catch (e) {
-    ok = false;
-    error = (e as Error).message;
-  }
-  const latencyMs = Date.now() - started;
-
-  const nodes = await db
-    .inTransaction(async (c) => {
-      await c.query('SET LOCAL allow_unsafe_internals = true');
-      const { rows } = await c.query<{ node_id: number; is_live: boolean; address: string }>(
-        `SELECT node_id, is_live, address FROM crdb_internal.gossip_nodes ORDER BY node_id`,
-      );
-      return rows;
-    })
-    .catch(() => [] as Array<{ node_id: number; is_live: boolean; address: string }>);
-
-  return {
-    ok,
-    error,
-    latencyMs,
-    target: TARGET,
-    topologyAvailable: nodes.length > 0,
-    nodes: nodes.map((n) => ({ id: n.node_id, live: n.is_live, address: n.address })),
-    liveNodes: nodes.filter((n) => n.is_live).length,
-    totalNodes: nodes.length,
-    beliefCount,
-    at: new Date().toISOString(),
-  };
-});
-
-route('GET', '/api/beliefs', async (_p, url) => {
-  const q = url.searchParams.get('q');
-  const status = url.searchParams.get('status');
-  const kind = url.searchParams.get('kind');
-
-  // Semantic search when the user typed something, otherwise a plain listing.
-  if (q && q.trim().length > 1) {
-    const hits = await recall.recall({
-      tenantId: TENANT_ID,
-      text: q,
-      kinds: kind ? [kind as never] : undefined,
-      limit: 40,
-    });
-    return { mode: 'semantic', beliefs: hits };
-  }
-
-  const params: unknown[] = [TENANT_ID];
-  let filter = '';
-  if (status) { params.push(status); filter += ` AND status = $${params.length}`; }
-  if (kind) { params.push(kind); filter += ` AND kind = $${params.length}`; }
-
-  const beliefs = await db.query(
-    `SELECT id, kind, subject, claim, confidence, status,
-            source_kind AS "sourceKind", source_ref AS "sourceRef",
-            derived_from_decision AS "derivedFromDecision",
-            valid_from AS "validFrom", valid_to AS "validTo"
-       FROM belief WHERE tenant_id = $1 ${filter}
-      ORDER BY valid_from DESC LIMIT 200`,
-    params,
-  );
-  return { mode: 'list', beliefs };
-});
-
-route('GET', '/api/beliefs/:id', async (p) => {
-  const [belief] = await db.query(
-    `SELECT id, kind, subject, claim, confidence, status,
-            source_kind AS "sourceKind", source_ref AS "sourceRef",
-            derived_from_decision AS "derivedFromDecision",
-            valid_from AS "validFrom", valid_to AS "validTo"
-       FROM belief WHERE tenant_id = $1 AND id = $2`,
-    [TENANT_ID, p.id],
-  );
-  if (!belief) throw new HttpError(404, 'belief not found');
-
-  const usedBy = await db.query(
-    `SELECT d.id, d.action, d.payload, d.committed_at AS "committedAt",
-            d.status, di.weight
-       FROM decision_input di
-       JOIN decision d ON d.tenant_id = di.tenant_id AND d.id = di.decision_id
-      WHERE di.tenant_id = $1 AND di.belief_id = $2
-      ORDER BY d.committed_at DESC`,
-    [TENANT_ID, p.id],
-  );
-  return { belief, usedBy };
-});
-
-route('GET', '/api/decisions', async (_p, url) => {
-  const limit = Math.min(Number(url.searchParams.get('limit') ?? 60), 200);
-  const decisions = await db.query(
-    `SELECT id, action, payload, rationale, status, actor,
-            committed_at AS "committedAt", reverted_at AS "revertedAt"
-       FROM decision WHERE tenant_id = $1
-      ORDER BY committed_at DESC LIMIT $2`,
-    [TENANT_ID, limit],
-  );
-  return { decisions };
-});
-
-/** Full causal lineage for one decision: which belief versions drove it. */
-route('GET', '/api/decisions/:id/lineage', async (p) => {
-  const inputs = await db.query(
-    `SELECT b.id, b.kind, b.subject, b.claim, b.status, b.confidence,
-            b.source_kind AS "sourceKind", di.weight
-       FROM decision_input di
-       JOIN belief b ON b.tenant_id = di.tenant_id AND b.id = di.belief_id
-      WHERE di.tenant_id = $1 AND di.decision_id = $2
-      ORDER BY di.weight DESC NULLS LAST`,
-    [TENANT_ID, p.id],
-  );
-  return { inputs };
-});
-
-/** THE endpoint. What did this false belief contaminate? */
-route('GET', '/api/blast-radius/:beliefId', async (p) => {
-  const started = Date.now();
-  const decisions = await recall.traceBlastRadius(TENANT_ID, p.beliefId);
-  return {
-    beliefId: p.beliefId,
-    decisions,
-    generations: decisions.length ? Math.max(...decisions.map((d) => Number(d.generation))) + 1 : 0,
-    tookMs: Date.now() - started,
-  };
-});
-
-route('POST', '/api/beliefs/:id/retract', async (p, _u, body) => {
-  const reason = (body as { reason?: string })?.reason ?? 'marked false from console';
-  await recall.retract(TENANT_ID, p.id, reason);
-  return { ok: true };
-});
-
-route('POST', '/api/revert', async (_p, _u, body) => {
-  const { decisionIds, reason } = (body ?? {}) as { decisionIds?: string[]; reason?: string };
-  if (!Array.isArray(decisionIds) || decisionIds.length === 0) {
-    throw new HttpError(400, 'decisionIds is required');
-  }
-  return recall.revert(TENANT_ID, decisionIds, reason ?? 'contaminated');
-});
-
-/** Memory as it stood at a past instant. */
-route('GET', '/api/timeline', async (_p, url) => {
-  const atParam = url.searchParams.get('at');
-  if (!atParam) throw new HttpError(400, 'at is required (ISO timestamp)');
-  const at = new Date(atParam);
-
-  const withinGc = db.isWithinGcWindow(at);
-  const sql = `SELECT id, kind, subject, claim, confidence, status
-                 FROM belief AS_OF_PLACEHOLDER
-                WHERE tenant_id = $1 ORDER BY valid_from DESC LIMIT 200`;
-
-  const beliefs = withinGc
-    ? await db.asOf(at, sql, [TENANT_ID])
-    : await db.query(
-        `SELECT id, kind, subject, claim, confidence, status
-           FROM belief
-          WHERE tenant_id = $1 AND valid_from <= $2
-            AND (valid_to IS NULL OR valid_to > $2)
-          ORDER BY valid_from DESC LIMIT 200`,
-        [TENANT_ID, at],
-      );
-
-  // Which mechanism answered matters, so the UI can say so honestly.
-  return { at: at.toISOString(), mechanism: withinGc ? 'AS OF SYSTEM TIME' : 'bitemporal', beliefs };
-});
-
-/**
- * Run the agent live.
- *
- * This is the whole product in one request: recall -> reason -> atomic commit
- * -> optional reflection. The response returns every intermediate step, because
- * the console shows the agent's working rather than just its answer.
- */
-route('POST', '/api/agent/handle', async (_p, _u, body) => {
-  const { request, reflect } = (body ?? {}) as { request?: string; reflect?: boolean };
-  if (!request || request.trim().length < 3) {
-    throw new HttpError(400, 'request text is required');
-  }
-  const result = await agent.handle(request.trim(), { reflect: reflect ?? false });
-  return result;
-});
-
-/* -------------------------------------------------------------------------
-   CockroachDB introspection.
-
-   These endpoints exist so the console can show the database actually doing
-   distributed-database work, rather than asking anyone to take it on trust.
-   Everything here is read live from the cluster serving the app.
-   ------------------------------------------------------------------------- */
-
-/**
- * Range and replica placement.
- *
- * Each range of the memory tables is replicated across nodes, and exactly one
- * replica per range holds the lease and serves reads. When a node dies, its
- * leases move. That movement is the whole resilience claim, made visible.
- *
- * `SHOW RANGES` is a supported statement and needs no unsafe-internals flag.
- * It is unavailable on serverless, where ranges are not the tenant's concern.
- */
-route('GET', '/api/crdb/ranges', async () => {
-  try {
-    const rows = await db.query<{
-      range_id: number;
-      replicas: number[];
-      lease_holder: number;
-      start_key: string;
-      end_key: string;
-    }>(`SELECT range_id, replicas, lease_holder, start_key, end_key
-          FROM [SHOW RANGES FROM DATABASE recall WITH DETAILS]
-         ORDER BY range_id`);
-
-    const byNode = new Map<number, { replicas: number; leases: number }>();
-    for (const r of rows) {
-      for (const n of r.replicas ?? []) {
-        const e = byNode.get(n) ?? { replicas: 0, leases: 0 };
-        e.replicas++;
-        byNode.set(n, e);
-      }
-      if (r.lease_holder != null) {
-        const e = byNode.get(r.lease_holder) ?? { replicas: 0, leases: 0 };
-        e.leases++;
-        byNode.set(r.lease_holder, e);
-      }
+    // -------------------------------------------------------------- MCP
+    if (path === '/api/mcp' || path.startsWith('/api/mcp/')) {
+      return await mcp(req, res, url);
     }
 
-    return {
-      available: true,
-      replicationFactor: rows.length ? (rows[0].replicas?.length ?? 0) : 0,
-      ranges: rows.map((r) => ({
-        id: r.range_id,
-        replicas: r.replicas ?? [],
-        leaseHolder: r.lease_holder,
-        span: `${r.start_key} → ${r.end_key}`,
-      })),
-      perNode: [...byNode.entries()]
-        .map(([node, v]) => ({ node, ...v }))
-        .sort((a, b) => a.node - b.node),
-    };
-  } catch (e) {
-    // Serverless (Cloud Basic) does not expose ranges to the tenant.
-    return { available: false, reason: (e as Error).message, ranges: [], perNode: [] };
-  }
-});
-
-/**
- * Live query plans for the queries the product actually runs.
- *
- * The point is falsifiability: anyone can claim their app "uses the vector
- * index". This runs EXPLAIN against the real statement and returns the plan,
- * so you can see `vector search → belief@belief_recall_idx` or catch that it
- * silently degraded to a full scan.
- */
-route('GET', '/api/crdb/plans', async () => {
-  const [sample] = await db.query<{ embedding: string }>(
-    `SELECT embedding::STRING AS embedding FROM belief
-      WHERE tenant_id = $1 AND embedding IS NOT NULL LIMIT 1`,
-    [TENANT_ID],
-  );
-
-  const probes: Array<{ id: string; label: string; why: string; sql: string; params: unknown[] }> = [
-    {
-      id: 'vector',
-      label: 'Semantic recall',
-      why: 'Must use the C-SPANN vector index, not a full scan.',
-      sql: `SELECT id FROM belief
-             WHERE tenant_id = $1 AND status = 'active'
-             ORDER BY embedding <=> $2 LIMIT 8`,
-      params: [TENANT_ID, sample?.embedding ?? null],
-    },
-    {
-      id: 'lineage',
-      label: 'Blast radius (recursive walk)',
-      why: 'The contamination trace, over the lineage edge table.',
-      sql: `WITH RECURSIVE
-            edges (src_kind, src_id, dst_kind, dst_id) AS (
-                SELECT 'belief', di.belief_id, 'decision', di.decision_id
-                  FROM decision_input di WHERE di.tenant_id = $1::UUID
-              UNION ALL
-                SELECT 'decision', b.derived_from_decision, 'belief', b.id
-                  FROM belief b
-                 WHERE b.tenant_id = $1::UUID AND b.derived_from_decision IS NOT NULL
-            ),
-            taint (kind, id, hops) AS (
-                SELECT 'belief', $2::UUID, 0
-              UNION
-                SELECT e.dst_kind, e.dst_id, t.hops + 1
-                  FROM taint t JOIN edges e
-                    ON e.src_kind = t.kind AND e.src_id = t.id
-                 WHERE t.hops < 32
-            )
-            SELECT d.id FROM taint t
-              JOIN decision d ON d.tenant_id = $1::UUID AND d.id = t.id
-             WHERE t.kind = 'decision'`,
-      params: [TENANT_ID, TENANT_ID],
-    },
-  ];
-
-  const plans = [];
-  for (const p of probes) {
-    if (p.params.some((x) => x === null)) continue;
-    try {
-      const started = Date.now();
-      const rows = await db.query<{ info: string }>(`EXPLAIN ${p.sql}`, p.params);
-      const plan = rows.map((r) => r.info).join('\n');
-      plans.push({
-        id: p.id,
-        label: p.label,
-        why: p.why,
-        sql: p.sql.replace(/\n\s+/g, '\n  ').trim(),
-        plan,
-        usesVectorIndex: /vector search/i.test(plan),
-        fullScan: /table: belief@pk_belief/i.test(plan) && !/vector search/i.test(plan),
-        tookMs: Date.now() - started,
+    // ----------------------------------------------------------- health
+    if (path === '/api/health') {
+      const health = await orbis.db.health();
+      return json(res, health.ok ? 200 : 503, {
+        ok: health.ok,
+        latencyMs: health.latencyMs,
+        target: TARGET,
+        embedder: {
+          id: choice.provider.id,
+          label: choice.provider.label,
+          semantic: choice.provider.semantic,
+          reason: choice.reason,
+          rejected: choice.rejected,
+        },
+        version: '1.0.0',
       });
-    } catch (e) {
-      plans.push({ id: p.id, label: p.label, why: p.why, sql: p.sql, plan: `error: ${(e as Error).message}`, usesVectorIndex: false, fullScan: false, tookMs: 0 });
+    }
+
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204, cors());
+      return void res.end();
+    }
+
+    // ------------------------------------------------------------- REST
+    if (path.startsWith('/api/v1/')) return await restApi(req, res, url);
+
+    // ---------------------------------------------------------- console
+    if (path.startsWith('/api/console/')) return await consoleApi(req, res, url);
+
+    // ------------------------------------------------------- static UI
+    return await serveStatic(req, res, path);
+  } catch (err) {
+    console.error(`[${req.method} ${path}]`, err);
+    return json(res, 500, { error: (err as Error).message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// REST — bearer authenticated, for scripts and integrations
+// ---------------------------------------------------------------------------
+
+async function restApi(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+  const header = req.headers.authorization;
+  const token = header?.startsWith('Bearer ') ? header.slice(7).trim() : null;
+  if (!token) return json(res, 401, { error: 'Authorization: Bearer <token> required' });
+
+  const resolved = await orbis.sessionForToken(token);
+  if (!resolved) return json(res, 401, { error: 'invalid token' });
+
+  const { session, identity } = resolved;
+  const route = url.pathname.replace('/api/v1', '');
+  const started = Date.now();
+
+  // /memories — the shape innernet's REST API uses, for familiarity.
+  if (route === '/memories' && req.method === 'POST') {
+    const b = await body(req);
+    const tool = TOOLS_BY_NAME.get('remember')!;
+    const r = await tool.handler(session, b, { client: 'rest', surface: 'rest' });
+    logToolCall(orbis.db, {
+      accountId: identity.accountId, client: 'rest', surface: 'rest',
+      tool: 'remember', ok: !r.isError, latencyMs: Date.now() - started,
+    });
+    return json(res, r.isError ? 400 : 201, r.structured ?? { ok: !r.isError, message: r.text });
+  }
+
+  if (route === '/memories' && req.method === 'GET') {
+    const items = await session.memories.list({
+      workspaceId: url.searchParams.get('workspace'),
+      limit: Number(url.searchParams.get('limit') ?? 50),
+    });
+    return json(res, 200, { memories: items });
+  }
+
+  if (route === '/search') {
+    const q = url.searchParams.get('q') ?? '';
+    if (!q) return json(res, 400, { error: 'q is required' });
+    const hits = await session.memories.search({
+      query: q,
+      workspaceId: url.searchParams.get('workspace'),
+      limit: Number(url.searchParams.get('limit') ?? 10),
+    });
+    logToolCall(orbis.db, {
+      accountId: identity.accountId, client: 'rest', surface: 'rest',
+      tool: 'search', latencyMs: Date.now() - started, resultCount: hits.length,
+    });
+    return json(res, 200, { results: hits });
+  }
+
+  if (route === '/context') {
+    const ctx = await session.context.build({ workspace: url.searchParams.get('workspace') });
+    return json(res, 200, {
+      markdown: session.context.render(ctx),
+      context: ctx,
+    });
+  }
+
+  if (route === '/workspaces') return json(res, 200, { workspaces: await session.workspaces.list() });
+
+  return json(res, 404, { error: `no such route: ${route}` });
+}
+
+// ---------------------------------------------------------------------------
+// Console API
+// ---------------------------------------------------------------------------
+
+async function consoleApi(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+  const accountId = await consoleAccount(req);
+  if (!accountId) return json(res, 401, { error: 'not authenticated' });
+
+  const session = orbis.session(accountId);
+  const route = url.pathname.replace('/api/console', '');
+  const q = url.searchParams;
+
+  // ------------------------------------------------------------- bootstrap
+  if (route === '/bootstrap') {
+    const [account, workspaces, connections, counts] = await Promise.all([
+      orbis.db.one(`SELECT display_name, email, traits, created_at FROM account WHERE id = $1`, [accountId]),
+      session.workspaces.list(),
+      orbis.db.query(
+        `SELECT client_name, client_version, protocol, transport, first_seen, last_seen, call_count
+           FROM client_connection WHERE account_id = $1 ORDER BY last_seen DESC`,
+        [accountId],
+      ),
+      orbis.db.one(
+        `SELECT
+           (SELECT count(*) FROM memory WHERE account_id = $1 AND status = 'active')::INT AS memories,
+           (SELECT count(*) FROM entity WHERE account_id = $1)::INT AS entities,
+           (SELECT count(*) FROM wiki_page WHERE account_id = $1)::INT AS pages,
+           (SELECT count(*) FROM tool_call WHERE account_id = $1)::INT AS calls,
+           (SELECT count(*) FROM interview_question WHERE account_id = $1 AND status = 'open')::INT AS questions`,
+        [accountId],
+      ),
+    ]);
+
+    return json(res, 200, {
+      account,
+      workspaces,
+      connections,
+      counts,
+      embedder: {
+        id: choice.provider.id,
+        label: choice.provider.label,
+        semantic: choice.provider.semantic,
+        reason: choice.reason,
+        rejected: choice.rejected,
+      },
+      target: TARGET,
+      dev: DEV,
+    });
+  }
+
+  // -------------------------------------------------------------- memories
+  if (route === '/memories' && req.method === 'GET') {
+    const items = await session.memories.list({
+      workspaceId: q.get('workspace'),
+      nodeId: q.get('node'),
+      kind: (q.get('kind') as any) ?? undefined,
+      client: q.get('client') ?? undefined,
+      status: q.get('status') ?? undefined,
+      limit: Number(q.get('limit') ?? 60),
+      offset: Number(q.get('offset') ?? 0),
+    });
+    return json(res, 200, { memories: items });
+  }
+
+  if (route === '/memories' && req.method === 'POST') {
+    const b = await body(req);
+    const r = await session.memories.remember({
+      title: b.title, body: b.body, kind: b.kind ?? 'fact',
+      workspaceId: b.workspaceId ?? null, tags: b.tags ?? [],
+      confidence: b.confidence ?? 0.6, source: 'api', client: 'console',
+    });
+    void session.graph.indexMemory(r.memory.id, `${r.memory.title}\n\n${r.memory.body}`).catch(() => {});
+    return json(res, 201, r);
+  }
+
+  if (route === '/search') {
+    const query = q.get('q') ?? '';
+    if (!query) return json(res, 200, { results: [] });
+    const started = Date.now();
+    const results = await session.memories.search({
+      query,
+      workspaceId: q.get('workspace'),
+      kind: (q.get('kind') as any) ?? undefined,
+      limit: Number(q.get('limit') ?? 20),
+    });
+    logToolCall(orbis.db, {
+      accountId, client: 'console', surface: 'console', tool: 'search',
+      latencyMs: Date.now() - started, resultCount: results.length,
+    });
+    return json(res, 200, { results, tookMs: Date.now() - started });
+  }
+
+  const memMatch = route.match(/^\/memories\/([0-9a-f-]{36})(\/\w+)?$/i);
+  if (memMatch) {
+    const [, id, action] = memMatch;
+    if (!action && req.method === 'GET') {
+      const m = await session.memories.get(id);
+      if (!m) return json(res, 404, { error: 'not found' });
+      const [sources, pages] = await Promise.all([
+        session.memories.sources(id),
+        session.wiki.pagesCiting(id),
+      ]);
+      return json(res, 200, { memory: m, sources, pages });
+    }
+    if (action === '/trace') return json(res, 200, await session.memories.fallout(id));
+    if (action === '/correct' && req.method === 'POST') {
+      const b = await body(req);
+      const existing = await session.memories.get(id);
+      if (!existing) return json(res, 404, { error: 'not found' });
+      const fallout = await session.memories.fallout(id);
+      const r = await session.memories.correct(id, {
+        reason: b.reason,
+        replacement: b.replacement
+          ? {
+              title: b.replacementTitle ?? existing.title, body: b.replacement,
+              kind: existing.kind, workspaceId: existing.workspaceId,
+              confidence: 0.75, source: 'api', client: 'console',
+            }
+          : undefined,
+      });
+      return json(res, 200, { ...r, fallout });
     }
   }
-  return { plans };
-});
 
-/** The schema, so the console can show what the memory layer actually is. */
-route('GET', '/api/crdb/schema', async () => {
-  const tables = await db.query<{ table_name: string; estimated_row_count: number }>(
-    `SELECT table_name, estimated_row_count
-       FROM [SHOW TABLES FROM recall WITH COMMENT]
-      ORDER BY table_name`,
-  ).catch(() => []);
+  // ------------------------------------------------------------ workspaces
+  if (route === '/workspaces' && req.method === 'GET') {
+    return json(res, 200, { workspaces: await session.workspaces.list() });
+  }
+  if (route === '/workspaces' && req.method === 'POST') {
+    return json(res, 201, await session.workspaces.create(await body(req)));
+  }
+  const treeMatch = route.match(/^\/workspaces\/([0-9a-f-]{36})\/tree$/i);
+  if (treeMatch) return json(res, 200, { tree: await session.workspaces.tree(treeMatch[1]) });
 
-  const indexes = await db.query<{ index_name: string; column_name: string; seq_in_index: number }>(
-    `SELECT index_name, column_name, seq_in_index
-       FROM [SHOW INDEXES FROM belief] ORDER BY index_name, seq_in_index`,
-  ).catch(() => []);
+  if (route === '/nodes' && req.method === 'POST') {
+    return json(res, 201, await session.workspaces.createNode(await body(req)));
+  }
 
-  const vectorIdx = indexes.filter((i) => i.index_name === 'belief_recall_idx');
+  // ----------------------------------------------------------------- graph
+  if (route === '/graph') {
+    return json(res, 200, await session.graph.snapshot({
+      workspaceId: q.get('workspace'),
+      limit: Number(q.get('limit') ?? 120),
+    }));
+  }
+  const entMatch = route.match(/^\/entities\/([0-9a-f-]{36})$/i);
+  if (entMatch) return json(res, 200, await session.graph.neighbourhood(entMatch[1]));
+  if (route === '/entities') {
+    return json(res, 200, { entities: await session.graph.entities({ limit: Number(q.get('limit') ?? 200) }) });
+  }
 
-  return {
-    tables,
-    vectorIndex: {
-      name: 'belief_recall_idx',
-      columns: vectorIdx.map((i) => i.column_name),
-      definition:
-        'CREATE VECTOR INDEX belief_recall_idx ON belief (tenant_id, status, kind, embedding vector_cosine_ops)',
-    },
-  };
-});
+  // ------------------------------------------------------------------ wiki
+  if (route === '/wiki') {
+    return json(res, 200, { pages: await session.wiki.list({ workspaceId: q.get('workspace') }) });
+  }
+  const wikiMatch = route.match(/^\/wiki\/([\w-]+)$/);
+  if (wikiMatch) {
+    const page = await session.wiki.get(wikiMatch[1]);
+    return page ? json(res, 200, page) : json(res, 404, { error: 'not found' });
+  }
 
-route('GET', '/api/audit', async (_p, url) => {
-  const limit = Math.min(Number(url.searchParams.get('limit') ?? 50), 200);
-  const entries = await db.query(
-    `SELECT id, at, actor, operation, target_kind AS "targetKind",
-            target_id AS "targetId", detail
-       FROM audit_log WHERE tenant_id = $1 ORDER BY at DESC LIMIT $2`,
-    [TENANT_ID, limit],
-  );
-  return { entries };
-});
+  // ------------------------------------------------------------- interview
+  if (route === '/interview' && req.method === 'GET') {
+    const rows = await orbis.db.query(
+      `SELECT * FROM interview_question WHERE account_id = $1 AND status = 'open'
+        ORDER BY priority DESC, created_at LIMIT 25`,
+      [accountId],
+    );
+    return json(res, 200, { questions: rows });
+  }
+  const answerMatch = route.match(/^\/interview\/([0-9a-f-]{36})\/(answer|skip)$/i);
+  if (answerMatch && req.method === 'POST') {
+    const [, id, action] = answerMatch;
+    if (action === 'skip') {
+      await orbis.db.query(
+        `UPDATE interview_question SET status='skipped' WHERE id=$1 AND account_id=$2`,
+        [id, accountId],
+      );
+      return json(res, 200, { ok: true });
+    }
+    const b = await body(req);
+    const question = await orbis.db.one(
+      `SELECT * FROM interview_question WHERE id=$1 AND account_id=$2`, [id, accountId],
+    );
+    if (!question) return json(res, 404, { error: 'not found' });
+    const r = await session.memories.remember({
+      title: question.topic,
+      body: b.answer,
+      kind: b.kind ?? 'preference',
+      workspaceId: question.workspace_id,
+      source: 'interview',
+      client: 'console',
+      confidence: 0.8,
+    });
+    await orbis.db.query(
+      `UPDATE interview_question SET status='answered', answered_at=now(), answer_memory=$3
+        WHERE id=$1 AND account_id=$2`,
+      [id, accountId, r.memory.id],
+    );
+    void session.graph.indexMemory(r.memory.id, `${r.memory.title}\n\n${r.memory.body}`).catch(() => {});
+    return json(res, 200, { memory: r.memory });
+  }
+
+  // --------------------------------------------------------------- tokens
+  if (route === '/tokens' && req.method === 'GET') {
+    return json(res, 200, { tokens: await orbis.tokens.list(accountId) });
+  }
+  if (route === '/tokens' && req.method === 'POST') {
+    const b = await body(req);
+    return json(res, 201, await orbis.tokens.create(accountId, b.name ?? 'default'));
+  }
+  const tokMatch = route.match(/^\/tokens\/([0-9a-f-]{36})$/i);
+  if (tokMatch && req.method === 'DELETE') {
+    return json(res, 200, { revoked: await orbis.tokens.revoke(accountId, tokMatch[1]) });
+  }
+
+  // -------------------------------------------------------- observability
+  if (route === '/activity') {
+    const since = q.get('since') ?? '24h';
+    const rows = await orbis.db.query(
+      `SELECT date_trunc('hour', at) AS bucket, client, count(*)::INT AS calls,
+              avg(latency_ms)::INT AS avg_ms,
+              count(*) FILTER (WHERE NOT ok)::INT AS errors
+         FROM tool_call
+        WHERE account_id = $1 AND at > now() - $2::INTERVAL
+     GROUP BY bucket, client ORDER BY bucket`,
+      [accountId, since],
+    );
+    return json(res, 200, { buckets: rows });
+  }
+
+  if (route === '/tools') {
+    const rows = await orbis.db.query(
+      `SELECT tool, count(*)::INT AS calls,
+              percentile_cont(0.5) WITHIN GROUP (ORDER BY latency_ms)::INT AS p50,
+              percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms)::INT AS p95,
+              max(latency_ms)::INT AS max_ms,
+              count(*) FILTER (WHERE NOT ok)::INT AS errors
+         FROM tool_call WHERE account_id = $1 AND at > now() - INTERVAL '7 days'
+     GROUP BY tool ORDER BY calls DESC`,
+      [accountId],
+    );
+    return json(res, 200, { tools: rows });
+  }
+
+  if (route === '/calls') {
+    const rows = await orbis.db.query(
+      `SELECT id, client, surface, tool, ok, latency_ms, error, result_count, at
+         FROM tool_call WHERE account_id = $1 ORDER BY at DESC LIMIT $2`,
+      [accountId, Number(q.get('limit') ?? 60)],
+    );
+    return json(res, 200, { calls: rows });
+  }
+
+  if (route === '/growth') {
+    const rows = await orbis.db.query(
+      `SELECT date_trunc('day', created_at) AS day, kind, count(*)::INT AS n
+         FROM memory WHERE account_id = $1 AND created_at > now() - INTERVAL '30 days'
+     GROUP BY day, kind ORDER BY day`,
+      [accountId],
+    );
+    return json(res, 200, { growth: rows });
+  }
+
+  if (route === '/audit') {
+    const rows = await orbis.db.query(
+      `SELECT id, action, target_kind, target_id, actor, detail, at
+         FROM audit_log WHERE account_id = $1 ORDER BY at DESC LIMIT $2`,
+      [accountId, Number(q.get('limit') ?? 100)],
+    );
+    return json(res, 200, { entries: rows });
+  }
+
+  // ------------------------------------------------------- CockroachDB view
+  if (route === '/crdb') return json(res, 200, await crdbSnapshot(accountId));
+
+  if (route === '/plans') {
+    const [vec] = await orbis.embedder.embed([q.get('q') ?? 'example query']);
+    const lit = `[${vec.join(',')}]`;
+    const ws = await session.workspaces.getDefault();
+    const plans: Record<string, string> = {};
+    const queries: Array<[string, string, unknown[]]> = [
+      ['scoped vector search',
+       `SELECT m.id FROM memory m WHERE m.account_id = $2 AND m.status = 'active'
+          AND m.workspace_id = $3 ORDER BY m.embedding <=> $1::VECTOR LIMIT 10`,
+       [lit, accountId, ws?.id]],
+      ['global vector search',
+       `SELECT m.id FROM memory m WHERE m.account_id = $2 AND m.status = 'active'
+         ORDER BY m.embedding <=> $1::VECTOR LIMIT 10`, [lit, accountId]],
+    ];
+    for (const [label, sql, params] of queries) {
+      try {
+        const rows = await orbis.db.query(`EXPLAIN ${sql}`, params);
+        plans[label] = rows.map((r) => String(Object.values(r)[0])).join('\n');
+      } catch (e) {
+        plans[label] = `unavailable: ${(e as Error).message}`;
+      }
+    }
+    return json(res, 200, { plans });
+  }
+
+  return json(res, 404, { error: `no such route: ${route}` });
+}
+
+/**
+ * CockroachDB internals for the observability view.
+ *
+ * Every part is individually guarded. `crdb_internal` is restricted by default
+ * in v26.2 and serverless clusters have no nodes to report, so a missing
+ * section has to degrade to "unavailable" rather than failing the whole
+ * request — the page is diagnostics, and diagnostics that vanish when something
+ * is unusual are worthless.
+ */
+async function crdbSnapshot(accountId: string) {
+  const out: Record<string, unknown> = {};
+
+  const health = await orbis.db.health();
+  out.health = health;
+  out.retries = orbis.db.stats;
+
+  try {
+    const rows = await orbis.db.query(`SELECT version() AS v`);
+    out.version = rows[0]?.v;
+  } catch { out.version = null; }
+
+  try {
+    out.tables = await orbis.db.query(
+      `SELECT table_name,
+              (SELECT count(*) FROM memory WHERE account_id = $1)::INT AS rows_for_account
+         FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name = 'memory'`,
+      [accountId],
+    );
+  } catch { out.tables = []; }
+
+  try {
+    out.indexes = await orbis.db.query(
+      `SELECT index_name, column_name, direction
+         FROM [SHOW INDEXES FROM memory] WHERE index_name LIKE '%recall%'`,
+    );
+  } catch { out.indexes = []; }
+
+  try {
+    out.ranges = await orbis.db.query(
+      `SELECT range_id, lease_holder, replicas, start_pretty
+         FROM [SHOW RANGES FROM TABLE memory WITH DETAILS] LIMIT 20`,
+    );
+  } catch (e) {
+    out.ranges = [];
+    out.rangesError = (e as Error).message.slice(0, 160);
+  }
+
+  return out;
+}
 
 // ---------------------------------------------------------------------------
-// Plumbing
-// ---------------------------------------------------------------------------
-class HttpError extends Error {
-  status: number;
-  constructor(status: number, message: string) {
-    super(message);
-    this.status = status;
+
+/**
+ * Which account the console is acting as.
+ *
+ * A bearer token if one is presented, otherwise the development account when
+ * ORBIS_DEV is on. With dev off and no token, unauthenticated — there is no
+ * third path.
+ */
+async function consoleAccount(req: IncomingMessage): Promise<string | null> {
+  const header = req.headers.authorization;
+  if (header?.startsWith('Bearer ')) {
+    const identity = await orbis.tokens.resolve(header.slice(7).trim());
+    if (identity) return identity.accountId;
+  }
+  return DEV ? devAccountId : null;
+}
+
+const MIME: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.json': 'application/json',
+  '.woff2': 'font/woff2',
+  '.png': 'image/png',
+};
+
+async function serveStatic(req: IncomingMessage, res: ServerResponse, path: string): Promise<void> {
+  if (!existsSync(CONSOLE_DIST)) {
+    return html(res, 200, devPlaceholder());
+  }
+  const rel = path === '/' ? '/index.html' : path;
+  const file = join(CONSOLE_DIST, rel);
+  // Single-page app: unknown paths fall through to index.html so client-side
+  // routing works on a hard refresh.
+  const target = existsSync(file) && !file.endsWith('/') ? file : join(CONSOLE_DIST, 'index.html');
+  try {
+    const data = await readFile(target);
+    res.writeHead(200, { 'Content-Type': MIME[extname(target)] ?? 'application/octet-stream' });
+    return void res.end(data);
+  } catch {
+    return json(res, 404, { error: 'not found' });
   }
 }
 
-async function readBody(req: IncomingMessage): Promise<unknown> {
+function devPlaceholder(): string {
+  return `<!doctype html><meta charset="utf-8"><title>Orbis</title>
+<style>body{font:15px/1.6 ui-sans-serif,system-ui;max-width:44rem;margin:6rem auto;padding:0 1.5rem;color:#111}
+code{background:#f4f4f5;padding:.15em .4em;border-radius:4px}a{color:#4338ca}</style>
+<h1>Orbis API is running</h1>
+<p>The console has not been built yet. Run <code>npm run dev</code> for the Vite dev server,
+or <code>npm run build</code> to produce a bundle this server will serve directly.</p>
+<p>Endpoints: <code>/api/health</code> · <code>/api/mcp</code> · <code>/api/v1</code></p>`;
+}
+
+function cors(): Record<string, string> {
+  return {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  };
+}
+
+function json(res: ServerResponse, status: number, payload: unknown): void {
+  res.writeHead(status, { ...cors(), 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(payload));
+}
+
+function html(res: ServerResponse, status: number, markup: string): void {
+  res.writeHead(status, { 'Content-Type': 'text/html; charset=utf-8' });
+  res.end(markup);
+}
+
+async function body(req: IncomingMessage): Promise<Record<string, any>> {
   const chunks: Buffer[] = [];
   for await (const c of req) chunks.push(c as Buffer);
-  if (chunks.length === 0) return undefined;
-  try {
-    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
-  } catch {
-    throw new HttpError(400, 'invalid JSON body');
-  }
+  const raw = Buffer.concat(chunks).toString('utf8');
+  if (!raw) return {};
+  try { return JSON.parse(raw); } catch { return {}; }
 }
 
-const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
-  const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
-
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Headers', 'content-type');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-  if (req.method === 'OPTIONS') { res.writeHead(204).end(); return; }
-
-  for (const r of routes) {
-    if (r.method !== req.method) continue;
-    const m = url.pathname.match(r.pattern);
-    if (!m) continue;
-
-    const params: Record<string, string> = {};
-    r.keys.forEach((k, i) => { params[k] = decodeURIComponent(m[i + 1]); });
-
-    try {
-      const body = req.method === 'POST' ? await readBody(req) : undefined;
-      const result = await r.handler(params, url, body);
-      res.writeHead(200, { 'content-type': 'application/json' });
-      res.end(JSON.stringify(result));
-    } catch (err) {
-      const status = err instanceof HttpError ? err.status : 500;
-      if (status === 500) console.error('[recall]', err);
-      res.writeHead(status, { 'content-type': 'application/json' });
-      res.end(JSON.stringify({ error: (err as Error).message }));
-    }
-    return;
-  }
-
-  res.writeHead(404, { 'content-type': 'application/json' });
-  res.end(JSON.stringify({ error: 'not found' }));
-});
+// ---------------------------------------------------------------------------
 
 server.listen(PORT, () => {
-  console.log(`recall api  ->  http://localhost:${PORT}  (target: ${TARGET})`);
+  const semantic = choice.provider.semantic ? '' : '  ⚠ NOT SEMANTIC';
+  console.log(`
+  Orbis  ·  ${TARGET}
+  ────────────────────────────────────────────────
+  console    http://localhost:${PORT}
+  mcp        http://localhost:${PORT}/api/mcp
+  rest       http://localhost:${PORT}/api/v1
+  health     http://localhost:${PORT}/api/health
+
+  embeddings ${choice.provider.label}${semantic}
+             ${choice.reason}
+  tools      ${TOOLS.filter((t) => !t.hidden).length} exposed (+2 ChatGPT aliases)
+  dev auth   ${DEV ? `on — acting as ${devAccountId?.slice(0, 8)}` : 'off — bearer token required'}
+`);
+  for (const r of choice.rejected) console.log(`  · ${r.id} unavailable: ${r.error}`);
 });
+
+for (const sig of ['SIGINT', 'SIGTERM']) {
+  process.on(sig, () => {
+    server.close();
+    void orbis.close().then(() => process.exit(0));
+  });
+}

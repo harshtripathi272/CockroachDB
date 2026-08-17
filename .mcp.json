@@ -1,11 +1,11 @@
 {
   "mcpServers": {
-    "recall": {
-      "command": "node",
-      "args": ["services/mcp/server.ts"],
-      "env": {
-        "RECALL_TARGET": "local",
-        "RECALL_MCP_ACTOR": "claude-code@local"
+    "orbis": {
+      "type": "http",
+      "url": "http://localhost:8787/api/mcp",
+      "headers": {
+        "Authorization": "Bearer ${ORBIS_TOKEN}",
+        "X-Orbis-Client": "claude-code"
       }
     }
   }
