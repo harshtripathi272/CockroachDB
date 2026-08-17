@@ -44,8 +44,14 @@ export function resolveConnectionString(target = process.env.ORBIS_TARGET ?? 'lo
     if (!url) throw new Error('CLOUD_DATABASE_URL is not set in .env');
     // CockroachDB Cloud presents a cluster-specific CA that the system trust
     // store does not carry. Without sslrootcert the handshake fails outright.
-    const cert = join(ROOT, 'certs', 'root.crt');
-    if (existsSync(cert) && !url.includes('sslrootcert')) {
+    // On Lambda the cert is written to /tmp by lambda.ts (ORBIS_CERT_PATH);
+    // locally it lives at certs/root.crt in the repo.
+    let cert = process.env.ORBIS_CERT_PATH;
+    if (!cert) {
+      const p = join(ROOT, 'certs', 'root.crt');
+      if (existsSync(p)) cert = p;
+    }
+    if (cert && !url.includes('sslrootcert')) {
       const sep = url.includes('?') ? '&' : '?';
       return `${url}${sep}sslrootcert=${cert.replace(/\\/g, '/')}`;
     }

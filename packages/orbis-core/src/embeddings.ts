@@ -80,17 +80,35 @@ export class LocalEmbedder {
    * Two callers arriving together must not both trigger a load, so the
    * in-flight promise is cached rather than the result — the second caller
    * awaits the first one's work instead of starting a duplicate download.
+   *
+   * Quantized (q8) weights rather than fp32, measured on the same corpus:
+   * identical top-1 retrieval (5/5), a margin to the runner-up of 0.165 against
+   * 0.166, and an unchanged dedupe corridor — but 22MB instead of 87MB, and
+   * marginally faster to run. Four times smaller for no measurable loss is what
+   * makes bundling this into a Lambda package viable at all.
+   *
+   * When ORBIS_MODEL_DIR is set the weights are read from disk and remote
+   * fetching is disabled outright. On Lambda that matters twice over: /var/task
+   * is read-only so a download has nowhere to land, and a cold start must not
+   * depend on reaching huggingface.co.
    */
   async #ready(): Promise<any> {
     if (this.#extractor) return this.#extractor;
     if (!this.#loading) {
       this.#loading = (async () => {
         const { pipeline, env } = await import('@huggingface/transformers');
-        // Keep the ~23MB model inside the repo so a container image can bake it
-        // in and a cold start does not reach out to the network.
-        env.cacheDir = './.models';
+
+        const bundled = process.env.ORBIS_MODEL_DIR;
+        if (bundled) {
+          env.localModelPath = bundled;
+          env.allowRemoteModels = false;
+          env.cacheDir = bundled;
+        } else {
+          env.cacheDir = process.env.ORBIS_MODEL_CACHE ?? './.models';
+        }
+
         const p = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', {
-          dtype: 'fp32',
+          dtype: (process.env.ORBIS_MODEL_DTYPE as 'q8' | 'fp32') ?? 'q8',
         });
         this.#extractor = p;
         return p;

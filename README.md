@@ -6,6 +6,8 @@ Connect once. Every AI tool you use — Claude Code, Codex, Cursor, opencode,
 Antigravity, ChatGPT — reads and writes the same memory, through a single MCP
 endpoint backed by CockroachDB.
 
+**Live demo:** https://afctmu6tki.execute-api.ap-south-1.amazonaws.com
+
 Built for the [CockroachDB × AWS Hackathon — Build with Agentic Memory](https://cockroachdb-ai.devpost.com/).
 
 ---
@@ -84,17 +86,17 @@ Stated plainly: what is wired and working, and what is not.
 | Cloud Managed MCP Server | ❌ **Not wired.** Orbis exposes *its own* MCP server, which is a different thing. Consuming CockroachDB's is not done. |
 | ccloud CLI | ❌ Not used. |
 
-### AWS services — 0 working (1 required)
+### AWS services — 4 in use (1 required)
+
+**Live:** https://afctmu6tki.execute-api.ap-south-1.amazonaws.com
 
 | Service | Status |
 |---|---|
-| Bedrock | ⚠️ **Coded, blocked.** Every `InvokeModel` returns `ValidationException: Operation not allowed` — an account-level verification gate on a new AWS account, not a model-access problem. The app probes at startup, reports the failure in the console, and falls back to an on-device model. |
-| Lambda / S3 / CloudFront | ❌ Not deployed. |
-
-**This is the honest gap.** The submission does not currently meet the AWS
-requirement. The architecture is built for it — the MCP handler is a plain JSON
-request/response function with no streaming state, specifically so it drops into
-Lambda unchanged — but it is not deployed, and saying otherwise would be a lie.
+| **AWS Lambda** | ✅ Runs the whole application — MCP endpoint, REST API, and the console's static assets. The same `handleHttp` serves local development and production, so there is one routing code path rather than two. |
+| **API Gateway (HTTP API)** | ✅ The public front door. Function URLs return 403 for every invocation in this account, even for a minimal function with `NONE` auth — an account-level restriction — so API Gateway is the door. |
+| **Secrets Manager** | ✅ Holds the CockroachDB Cloud connection string and CA certificate. Neither is in the function's environment. |
+| **S3** | ✅ Deployment artefacts. The bundle exceeds the 50MB inline limit, so it is uploaded to S3 and referenced by key. |
+| Bedrock | ⚠️ **Coded, blocked, and no longer needed.** `InvokeModel` returns `ValidationException: Operation not allowed` — a new-account verification gate. Provider selection probes it first on every cold start, so if the account is ever unblocked Bedrock applies itself with no redeploy. |
 
 ### What is real, and what is not
 
@@ -102,16 +104,44 @@ Lambda unchanged — but it is not deployed, and saying otherwise would be a lie
 semantic recall, the vector indexes and their query plans, correction
 propagation, bitemporal history, serializable retry behaviour under 20-way
 contention, row-level security, entity extraction, the MCP wire protocol,
-consolidation.
+consolidation — and all of it running on the deployed Lambda, not only locally.
 
-**Simulated or absent:**
+**Absent:**
 
-- **Nothing about embeddings.** This is the one place where the fallback turned
-  out to be better than the thing it replaced — see below.
 - **No LLM anywhere.** Consolidation and entity extraction are deterministic by
-  design, not by limitation (also below). There is no chat feature.
-- **Not deployed.** Runs locally and against CockroachDB Cloud. There is no
-  public demo URL.
+  design, not by limitation (see below). There is no chat feature.
+- **Nothing is simulated.** The one thing that was — keyword-only search on the
+  deployed copy — is fixed, and how is worth reading.
+
+### The deployed demo is semantic without Bedrock
+
+The first deployment fell back to keyword-only matching, because the on-device
+embedder was excluded from the bundle on the assumption that onnxruntime plus
+transformers is ~350MB. That is true only of the unpruned tree:
+
+| | Before | After |
+|---|---|---|
+| onnxruntime binaries | 211MB (win32 + darwin + linux) | **53MB** (linux/x64 only) |
+| model weights | 87MB (fp32) | **22MB** (q8) |
+| sharp binaries | win32 only — *fails on Lambda* | linux/x64 |
+
+Quantizing costs nothing measurable: 5/5 top-1 retrieval either way, a margin to
+the runner-up of 0.165 against 0.166, an unchanged dedupe corridor, and it runs
+marginally faster. Lambda's real ceiling is 250MB *unzipped* when the package is
+delivered via S3 — only direct upload is capped at 50MB. The result is 59MB
+zipped, and the live endpoint reports:
+
+```json
+"embedder": { "id": "local:all-MiniLM-L6-v2", "semantic": true }
+```
+
+Verified end to end against the deployed URL: *"how long do people have to get
+their money back"* matches a memory reading *"reimbursement within thirty days"*
+in 90ms, sharing no vocabulary at all.
+
+`ORBIS_EMBEDDER` is deliberately left unset. Pinning it to `bedrock` was what
+caused the degradation in the first place — selection then tried exactly one
+provider and had nothing to fall through to but the lexical stub.
 
 ---
 

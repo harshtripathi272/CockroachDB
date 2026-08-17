@@ -3,7 +3,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join, extname, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { Orbis } from '../../packages/orbis-core/src/index.ts';
 import { logToolCall } from '../../packages/orbis-core/src/index.ts';
 import { createMcpHandler } from '../mcp/http.ts';
@@ -27,10 +27,10 @@ loadEnv();
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const PORT = Number(process.env.PORT ?? 8787);
-const TARGET = process.env.ORBIS_TARGET ?? 'local';
+export const TARGET = process.env.ORBIS_TARGET ?? 'local';
 const CONSOLE_DIST = join(ROOT, 'apps', 'console', 'dist');
 
-const orbis = new Orbis({
+export const orbis = new Orbis({
   connectionString: resolveConnectionString(TARGET),
   applicationName: 'orbis-api',
   embedder: {
@@ -40,7 +40,7 @@ const orbis = new Orbis({
   },
 });
 
-const choice = await orbis.ready();
+export const choice = await orbis.ready();
 
 /**
  * A development account so the console is usable without a login flow.
@@ -75,8 +75,11 @@ const mcp = createMcpHandler({
 });
 
 // ---------------------------------------------------------------------------
+// The shared request handler. Used by the local listener and by lambda.ts, so
+// the deployed function executes the exact same routing as local development.
+// ---------------------------------------------------------------------------
 
-const server = createServer(async (req, res) => {
+export async function handleHttp(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
   const path = url.pathname;
 
@@ -121,7 +124,7 @@ const server = createServer(async (req, res) => {
     console.error(`[${req.method} ${path}]`, err);
     return json(res, 500, { error: (err as Error).message });
   }
-});
+}
 
 // ---------------------------------------------------------------------------
 // REST — bearer authenticated, for scripts and integrations
@@ -625,10 +628,20 @@ async function body(req: IncomingMessage): Promise<Record<string, any>> {
 }
 
 // ---------------------------------------------------------------------------
+// Local listener (when run directly: `node services/api/server.ts`)
+//
+// Guarded so that importing this module from lambda.ts does not start a second
+// server: the Lambda runtime calls handleHttp directly instead.
+// ---------------------------------------------------------------------------
 
-server.listen(PORT, () => {
-  const semantic = choice.provider.semantic ? '' : '  ⚠ NOT SEMANTIC';
-  console.log(`
+const isEntry = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+
+if (isEntry) {
+  const server = createServer(handleHttp);
+
+  server.listen(PORT, () => {
+    const semantic = choice.provider.semantic ? '' : '  ⚠ NOT SEMANTIC';
+    console.log(`
   Orbis  ·  ${TARGET}
   ────────────────────────────────────────────────
   console    http://localhost:${PORT}
@@ -641,12 +654,13 @@ server.listen(PORT, () => {
   tools      ${TOOLS.filter((t) => !t.hidden).length} exposed (+2 ChatGPT aliases)
   dev auth   ${DEV ? `on — acting as ${devAccountId?.slice(0, 8)}` : 'off — bearer token required'}
 `);
-  for (const r of choice.rejected) console.log(`  · ${r.id} unavailable: ${r.error}`);
-});
-
-for (const sig of ['SIGINT', 'SIGTERM']) {
-  process.on(sig, () => {
-    server.close();
-    void orbis.close().then(() => process.exit(0));
+    for (const r of choice.rejected) console.log(`  · ${r.id} unavailable: ${r.error}`);
   });
+
+  for (const sig of ['SIGINT', 'SIGTERM']) {
+    process.on(sig, () => {
+      server.close();
+      void orbis.close().then(() => process.exit(0));
+    });
+  }
 }

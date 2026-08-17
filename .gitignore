@@ -13,3 +13,4 @@ scratch_*
 # local model cache (~23MB ONNX weights, downloaded on first run)
 .models/
 .scratch/
+.commandcode
