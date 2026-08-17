@@ -22,7 +22,7 @@
     "build": "npm run build --prefix apps/console",
     "dream": "node services/dream/run.ts",
     "import": "node scripts/import.ts",
-    "test": "node --test \"tests/*.test.ts\"",
+    "test": "node --test --test-concurrency=1 \"tests/*.test.ts\"",
     "chaos:kill": "docker kill recall-roach2-1",
     "chaos:heal": "docker start recall-roach2-1"
   },

@@ -53,13 +53,23 @@ export class ContextBuilder {
 
     // When the agent supplies what it is about to work on, recall is relevant
     // to that. Without it, fall back to recency — the best available proxy.
+    //
+    // `status: 'active'` is not optional here. MemoryStore.list defaults to
+    // excluding only superseded rows, which is right for the Memories view —
+    // seeing a retracted memory struck through is useful there. It is exactly
+    // wrong for this path: a retracted memory rendered into session context is
+    // handed to the model as current truth, with nothing to signal otherwise.
     const recent = opts.query
       ? await this.#memories.search({
           query: opts.query,
           workspaceId: workspace?.id ?? null,
           limit: MAX_RECENT,
         })
-      : await this.#memories.list({ workspaceId: workspace?.id ?? null, limit: MAX_RECENT });
+      : await this.#memories.list({
+          workspaceId: workspace?.id ?? null,
+          status: 'active',
+          limit: MAX_RECENT,
+        });
 
     const openQuestions = await this.#openQuestions(workspace?.id ?? null);
     const profile = await this.#profileText();
