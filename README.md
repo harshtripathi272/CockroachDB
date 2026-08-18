@@ -7,331 +7,187 @@ Antigravity, ChatGPT — reads and writes the same memory, through a single MCP
 endpoint backed by CockroachDB.
 
 **Live demo:** https://afctmu6tki.execute-api.ap-south-1.amazonaws.com
+**The story:** [BLOG.md](BLOG.md)
 
 Built for the [CockroachDB × AWS Hackathon — Build with Agentic Memory](https://cockroachdb-ai.devpost.com/).
 
 ---
 
-## The problem, stated honestly
+## What is this, in sixty seconds
 
-I was already solving this by hand.
+Every AI tool keeps its own memory, and none of them can read the others'.
+Tell Claude Code your database schema on Monday, and Cursor has never heard of
+it on Tuesday. People solve this today by pasting the same context into four
+config files and keeping them in sync by hand — that is exactly what I was
+doing, with a sixty-line protocol file, before building this.
 
-My global `CLAUDE.md` is a sixty-line protocol telling Claude Code, Codex and
-Hermes how to read and write a shared Obsidian vault: where project context
-lives, what is worth writing down, that decisions are append-only, that you must
-read a file before overwriting it. Command Code keeps a separate
-`.commandcode/taste/taste.md` scoring what it has learned about how I work.
-open-second-brain keeps a third copy in `Brain/`.
+Orbis is the shared memory those tools were missing:
 
-Three memory systems, three formats, none of them able to see the others, all of
-them synced by git and enforced by hope.
+- **One address.** `https://your-host/api/mcp`. Every MCP-capable tool
+  connects to the same URL with a token. From then on they share one memory.
+- **Recall by meaning.** Ask *"how long do people have to get their money
+  back"* and find a note that says *"reimbursement within thirty days"* — no
+  shared words needed.
+- **A brain that tidies up.** A background worker listens to a CockroachDB
+  changefeed and reorganises memory as it changes: repeated observations
+  become preferences, duplicate entities merge, a profile page rewrites
+  itself — whether or not anyone is looking.
+- **Correction that propagates.** Mark one memory wrong and Orbis shows
+  everything derived from it, however many hops away, before anything changes.
+- **It asks.** Orbis works out what it *doesn't* know about you and raises
+  questions any connected agent can ask you mid-task.
+- **It's yours.** One click exports everything as JSON. Forgetting (memory
+  decay) exists but is off unless you turn it on. Nothing is ever silently
+  deleted.
 
-That is what Orbis replaces. Not "AI needs memory" in the abstract — the
-specific, tedious, already-happening problem of maintaining the same context in
-four places because no two tools can share it.
+## Try the live demo (nothing to install)
 
-## What it does
+Open https://afctmu6tki.execute-api.ap-south-1.amazonaws.com and click around —
+it is the real system with real imported data, read-only for visitors:
 
-- **One endpoint.** `https://your-host/api/mcp`. Every MCP-capable client
-  connects to the same URL with a bearer token.
-- **Recall by meaning.** Ask "how long do people have to get their money back"
-  and find a memory that says "reimbursement within thirty days" — no shared
-  vocabulary required.
-- **Memory that organises itself.** A consolidation pass turns raw memories into
-  a profile and project pages, and every claim links back to the memories it
-  came from.
-- **Correction that propagates.** Tell it something is wrong and one recursive
-  query finds everything derived from it, however many hops away.
-- **It asks.** Orbis works out what it does not know about you and raises
-  questions — answerable in the console, or by any connected agent mid-task.
-- **A chat that is just another client.** The console's Chat tab holds the same
-  nine tools an external agent gets, writes with `client: 'orbis-chat'`, and
-  shows the tool trace under every reply. Model is selectable per conversation.
-- **Capture from a phone.** A Telegram bot runs the same tool layer, so
-  something noted on a walk is in Claude Code an hour later.
-- **It is also an MCP client.** Orbis connects out to CockroachDB Cloud's
-  managed MCP server, so the chat agent can ask the cluster about itself in the
-  same turn it asks memory about you, and the console's index proof is run by
-  CockroachDB's own tooling rather than self-reported.
+1. **memories** — search *"how long to get my money back"* and watch it find
+   the refunds note. The timing and "ranked by meaning" line are live.
+2. **about you** — a profile written by consolidation, every claim cited back
+   to the memories it came from.
+3. **ask** — open the existing conversation to see the tool trace under a
+   reply.
+4. **activity** — every tool call ever made against this instance, with
+   latency percentiles. The CockroachDB panel runs `EXPLAIN` live and shows
+   whether the vector index was chosen.
+5. **Export** (top of memories) — take the whole dataset home as JSON.
 
 ---
 
-## Try it
+## Run it yourself — the complete guide
+
+This is written so someone who has never seen the project can go from a blank
+laptop to a working Orbis in about ten minutes. Commands are for
+macOS/Linux/WSL and Windows PowerShell alike unless marked.
+
+### 0. Prerequisites
+
+| You need | Version | Get it from |
+|---|---|---|
+| Node.js | 22+ | https://nodejs.org (LTS installer) |
+| git | any recent | https://git-scm.com/downloads |
+| Docker Desktop | any recent | https://www.docker.com/products/docker-desktop — **only for the local database path (1A)**. Skip it if you use the free cloud database (1B). |
+
+Check what you have:
 
 ```bash
+node --version   # v22.x or newer
+git --version
+docker --version # only needed for path 1A
+```
+
+### 1. Get the code and a database
+
+```bash
+git clone https://github.com/harshtripathi272/CockroachDB.git orbis
+cd orbis
 npm install
-npm run db:up          # 3-node CockroachDB in Docker
-npm run db:migrate     # schema, indexes, RLS
-npm run api            # API + MCP endpoint on :8787
-npm run dev            # console on :5173
 ```
 
-Then connect a client. Create a token in **Setup**, and:
+Then pick **one** of the two database paths:
+
+**Path 1A — local, with Docker (best for playing with it):**
 
 ```bash
-claude mcp add --transport http orbis http://localhost:8787/api/mcp --header "Authorization: Bearer orb_live_..."
+npm run db:up        # starts a real 3-node CockroachDB cluster in Docker
+npm run db:migrate   # creates the schema, vector indexes, RLS policies
 ```
 
-Populate it with something real rather than fiction:
+**Path 1B — CockroachDB Cloud, no Docker (best for keeping it):**
+
+1. Create a free cluster at https://cockroachlabs.cloud (no credit card).
+2. Copy `.env.example` to `.env` and fill in `CLOUD_DATABASE_URL` (the
+   connection string the Cloud console shows you), `CRDB_SQL_USER`,
+   `CRDB_SQL_PASSWORD`, `CRDB_HOST`, and `CRDB_CLUSTER_ID`.
+3. Set `ORBIS_TARGET=cloud` in `.env`, then:
 
 ```bash
-node scripts/import.ts --taste                      # a Command Code taste profile
-node scripts/import.ts --vault="<path>" --dry-run   # an Obsidian vault, preview first
-npm run dream                                       # consolidate into a profile
+npm run db:migrate
 ```
 
-Optional surfaces:
+### 2. Start it
 
 ```bash
-# Chat with a real model instead of retrieval-only. Either key works; with
-# neither, the Chat tab still answers from memory and says so.
-ANTHROPIC_API_KEY=sk-ant-... npm run api
-
-# Telegram. Get a token from @BotFather, then pair a chat by sending it
-# `/start <an Orbis token from Setup>`.
-TELEGRAM_BOT_TOKEN=... npm run telegram
-
-# CockroachDB Cloud's managed MCP server. Cloud Console -> Access Management ->
-# Service Accounts -> API key. Without it, Signals -> Cloud MCP says so.
-CRDB_CLOUD_API_KEY=... npm run api
+npm run api    # API + MCP endpoint + console on http://localhost:8787
 ```
 
----
+That's the whole app. Two optional processes make it better:
 
-## Requirement coverage
-
-Stated plainly: what is wired and working, and what is not.
-
-### CockroachDB tools — 3 of 4 (2 required)
-
-| Tool | Status |
-|---|---|
-| **Distributed Vector Indexing** | ✅ **In use.** Two C-SPANN indexes with `vector_cosine_ops`. The console runs `EXPLAIN` live and labels whether the index was chosen, so index use is falsifiable rather than asserted. |
-| **Agent Skills Repo** | ✅ **Installed** — 34 skills via `npx skills add cockroachlabs/cockroachdb-skills`. |
-| **Cloud Managed MCP Server** | ✅ **Consumed as a client.** A hand-written Streamable-HTTP MCP client ([`services/cloud/mcp-client.ts`](services/cloud/mcp-client.ts)) handshakes with `https://cockroachlabs.cloud/mcp`, discovers its tools, and calls the read-only ones. Surfaced in **Signals → Cloud MCP**, and merged into the chat agent's tool list as `crdb_*`. Needs a service-account API key you supply — see below. |
-| ccloud CLI | ❌ Not used. Nothing in Orbis provisions or administers clusters, which is what that CLI is for. |
-
-### AWS services — 4 in use (1 required)
-
-**Live:** https://afctmu6tki.execute-api.ap-south-1.amazonaws.com
-
-| Service | Status |
-|---|---|
-| **AWS Lambda** | ✅ Runs the whole application — MCP endpoint, REST API, and the console's static assets. The same `handleHttp` serves local development and production, so there is one routing code path rather than two. |
-| **API Gateway (HTTP API)** | ✅ The public front door. Function URLs return 403 for every invocation in this account, even for a minimal function with `NONE` auth — an account-level restriction — so API Gateway is the door. |
-| **Secrets Manager** | ✅ Holds the CockroachDB Cloud connection string and CA certificate. Neither is in the function's environment. |
-| **S3** | ✅ Deployment artefacts. The bundle exceeds the 50MB inline limit, so it is uploaded to S3 and referenced by key. |
-| Bedrock | ⚠️ **Coded, blocked, and no longer needed.** `InvokeModel` returns `ValidationException: Operation not allowed` — a new-account verification gate. Provider selection probes it first on every cold start, so if the account is ever unblocked Bedrock applies itself with no redeploy. |
-
-### What is real, and what is not
-
-**Real, and covered by tests against a live cluster:**
-semantic recall, the vector indexes and their query plans, correction
-propagation, bitemporal history, serializable retry behaviour under 20-way
-contention, row-level security, entity extraction, the MCP wire protocol,
-consolidation — and all of it running on the deployed Lambda, not only locally.
-
-**Partly real, and labelled as such in the product:**
-
-- **Chat needs a key you supply.** The Chat tab probes for `ANTHROPIC_API_KEY`
-  and `OPENAI_API_KEY` at startup. With one, it runs a full tool-calling loop
-  over all nine tools. With neither — which is how the public demo runs — it
-  falls back to *retrieval only*: it embeds your question, searches, and quotes
-  the matches with citations, and says plainly in a banner that no model wrote
-  the reply. The retrieval half is genuinely working; the writing half is
-  honestly missing rather than faked.
-- **The Telegram bot needs a bot token**, from `@BotFather`. The code and its
-  tests are complete; there is no hosted instance to point you at.
-- **The CockroachDB Cloud MCP client needs a service-account key.** The client
-  is real and tested — twenty-six tests, including a full handshake, `tools/list`
-  and `tools/call` over a real socket against Orbis's own MCP server, which is an
-  independently written implementation of the same spec. Against
-  `cockroachlabs.cloud/mcp` itself the tested assertion is narrower and stated as
-  such: the endpoint is live, speaks MCP, and refuses an unauthenticated
-  handshake with the documented bearer challenge. There is no key in this
-  environment, so the tool calls beyond that point are unexercised, and the
-  console shows "not configured" rather than implying otherwise.
-
-**Absent:**
-
-- **No LLM in consolidation or entity extraction.** Both are deterministic by
-  design, not by limitation (see below). That is unchanged — the chat agent is
-  a separate surface and nothing in the memory pipeline depends on it.
-- **Nothing is simulated.** The one thing that was — keyword-only search on the
-  deployed copy — is fixed, and how is worth reading.
-
-### The deployed demo is semantic without Bedrock
-
-The first deployment fell back to keyword-only matching, because the on-device
-embedder was excluded from the bundle on the assumption that onnxruntime plus
-transformers is ~350MB. That is true only of the unpruned tree:
-
-| | Before | After |
-|---|---|---|
-| onnxruntime binaries | 211MB (win32 + darwin + linux) | **53MB** (linux/x64 only) |
-| model weights | 87MB (fp32) | **22MB** (q8) |
-| sharp binaries | win32 only — *fails on Lambda* | linux/x64 |
-
-Quantizing costs nothing measurable: 5/5 top-1 retrieval either way, a margin to
-the runner-up of 0.165 against 0.166, an unchanged dedupe corridor, and it runs
-marginally faster. Lambda's real ceiling is 250MB *unzipped* when the package is
-delivered via S3 — only direct upload is capped at 50MB. The result is 59MB
-zipped, and the live endpoint reports:
-
-```json
-"embedder": { "id": "local:all-MiniLM-L6-v2", "semantic": true }
+```bash
+npm run dev    # hot-reloading console on :5173 (only if you're editing the UI)
+npm run brain  # the background worker — reacts to changefeed events,
+               # consolidates memory, fades old memories if enabled
 ```
 
-Verified end to end against the deployed URL: *"how long do people have to get
-their money back"* matches a memory reading *"reimbursement within thirty days"*
-in 90ms, sharing no vocabulary at all.
+Open http://localhost:8787 — the onboarding walkthrough starts on first visit.
 
-`ORBIS_EMBEDDER` is deliberately left unset. Pinning it to `bedrock` was what
-caused the degradation in the first place — selection then tried exactly one
-provider and had nothing to fall through to but the lexical stub.
+> **First run note:** the on-device embedding model (~22MB) downloads on first
+> use and is cached in `.models/`. The first search takes a few seconds; every
+> one after that is fast.
 
----
+### 3. Connect your AI tools
 
-## Three things that were measured, not assumed
+In the console: **connect → Create a token**, copy the token, then pick your
+tool — the page shows the exact config to paste for Claude Code, Codex,
+Cursor, opencode, Antigravity, Claude Desktop, Zed, Cline, ChatGPT and more.
+The quickest one:
 
-Each of these changed the implementation.
-
-### 1. The on-device model beat the cloud model, and the bigger local model
-
-Bedrock being blocked forced a local fallback: MiniLM-L6-v2 running on CPU
-through ONNX. It turns out to be genuinely semantic —
-
-```
-"reimbursement policy"  ↔  "refund rules"        0.660   no shared vocabulary
-"prefers TypeScript"    ↔  "statically typed"    0.479
-"prefers TypeScript"    ↔  "cat named Biscuit"   0.041
+```bash
+claude mcp add --transport http orbis http://localhost:8787/api/mcp --header "Authorization: Bearer orb_live_YOURTOKEN"
 ```
 
-The obvious upgrade is `bge-small-en-v1.5`, which produces higher absolute
-similarity scores and looks better at a glance. Measured on the same corpus it
-is worse where it counts:
+Then, in that tool, just work. Say something worth remembering ("we decided to
+use Postgres wire protocol for this project") and watch it appear in
+**memories**. The **connect** page's third card turns green when a client
+genuinely handshakes — it is driven by real connections, not checkboxes.
 
-| | top-1 correct | mean margin to runner-up | load time |
-|---|---|---|---|
-| MiniLM-L6-v2 | **5/5** | **0.166** | 0.5s |
-| bge-small-en-v1.5 | 4/5 | 0.094 | 9.4s |
+### 4. Bring your existing memory with you
 
-Absolute score is cosmetic. The gap between the right answer and the runner-up
-is what makes recall trustworthy. **Bedrock is now an upgrade path, not a
-dependency** — which is a better architecture than the one originally planned.
-
-### 2. Two clauses silently disqualify a CockroachDB vector index
-
-Both return correct-looking rows. Only `EXPLAIN` tells you.
-
-```sql
--- Looks like harmless defensive filtering. Drops the index entirely.
-AND m.embedding IS NOT NULL
-
--- Leaving a nullable trailing prefix column unconstrained also drops it,
--- so "search everywhere" needs its own index.
-WHERE account_id = $1 AND status = $2   -- workspace_id unconstrained
+```bash
+node scripts/import.ts --vault="path/to/obsidian-vault" --dry-run  # preview
+node scripts/import.ts --vault="path/to/obsidian-vault"           # import
+node scripts/import.ts --taste                                    # a Command Code taste profile
+npm run dream                                                     # consolidate into a profile
 ```
 
-Bisected against a real 800-row table:
+### 5. Optional keys (everything works without them)
 
-| Query shape | Plan |
+Paste these in **settings** — no restart needed — or set them as environment
+variables:
+
+| Key | What it unlocks |
 |---|---|
-| scoped, no `IS NOT NULL` | ✅ `vector search · memory_recall_idx` |
-| scoped, with `IS NOT NULL` | ❌ full scan |
-| unscoped, no global index | ❌ full scan |
-| unscoped, with global index | ✅ `vector search · memory_recall_global_idx` |
+| `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` | The **ask** tab writes real answers instead of quoting matches. Without either, it still searches semantically and cites what it found — and says so. |
+| `CRDB_CLOUD_API_KEY` | Orbis connects out to CockroachDB Cloud's managed MCP server, so the chat agent can ask the cluster about itself (nodes, schemas, query plans). Cloud Console → Access Management → Service Accounts → create one, **assign it the Cluster Operator role**, create an API key. The role matters: a key without it authenticates and then can see no clusters — the console diagnoses this exact state. |
+| `TELEGRAM_BOT_TOKEN` | `npm run telegram` — capture memories from your phone. Get a token from `@BotFather`, then pair by sending the bot `/start <an Orbis token>`. |
 
-There is a test that asserts the *failure* case still fails, so if CockroachDB
-ever fixes it, the suite tells us the workaround can go.
+### 6. Deploy your own to AWS (optional)
 
-### 3. Enabling row-level security is not the same as enforcing it
+```powershell
+# Windows PowerShell, with AWS CLI configured (aws configure)
+powershell -ExecutionPolicy Bypass -File deploy\deploy.ps1
+```
 
-Policies were written, applied, and enforced nothing. Two default exemptions:
-`root` carries `rolbypassrls`, and the table owner is exempt without
-`FORCE ROW LEVEL SECURITY`. A connection scoped to a random account id still saw
-every row.
+The script builds the console, prunes the bundle to fit Lambda (59MB zipped,
+on-device model included), uploads via S3, creates/updates the Lambda + API
+Gateway, and stores the database credentials in Secrets Manager. It deploys
+with `ORBIS_DEMO=1` — anonymous visitors get read-only; writes need a token.
 
-After adding a least-privilege `orbis_app` role and forcing RLS:
+### Troubleshooting
 
-| Connection | Rows visible |
-|---|---|
-| root, unscoped | 27 (superuser bypass) |
-| **orbis_app, unscoped** | **0** — fails closed |
-| orbis_app, scoped to own account | 27 |
-| orbis_app, scoped to another account | 0 |
-| orbis_app, cross-account **write** | **refused by `WITH CHECK`** |
-
-The application still connects as owner and filters by `account_id` explicitly;
-switching the runtime role is a configuration change. The policies are proven to
-work, and that proof is in the test suite.
-
----
-
-### 4. An absolute relevance cutoff cannot work, and a relative one can
-
-Search returned its top *k* by cosine distance with no notion of "close
-enough", so a targeted question came back with six results of which one was
-relevant. The obvious fix is a distance ceiling. Measured against the live
-corpus, it does not work:
-
-| query | best match |
-|---|---|
-| `tell me about pineapples on mars` — nonsense | **0.780** |
-| `what database am I using` — fair question | **0.777** |
-
-The nonsense query's nearest memory is *closer* than the fair one's. MiniLM's
-absolute distances are not comparable across queries, so no ceiling separates
-them.
-
-What is comparable is the shape of the tail. A question the corpus can answer
-has one or two matches noticeably closer than the rest; one it cannot has a
-flat run of mediocre ones. Cutting relative to the best hit — keep anything
-within 0.10 of it — exploits that:
-
-| query | before | after |
-|---|---|---|
-| `how long do people have to get their money back?` | 6 results | **1** |
-| `what did I learn about vector indexes` | 8 results | **1** |
-| `what are my coding preferences` | 8 results | **3**, all genuine |
-
-The third row is why this is not just a smaller `limit`: a broad question still
-returns its real matches.
-
-For the case the window cannot fix — the nonsense query still has *something*
-nearest to it — `search_memory` now says so. When the best match is beyond
-0.75 it prefixes the results with *"No memory closely matches … treat them as
-loosely related"*. A model handed six mediocre rows with no signal answers
-confidently from them; told the retrieval was weak, it hedges. That guard lives
-in the tool layer, so every client inherits it rather than each reimplementing
-it.
-
----
-
-## Why consolidation has no LLM in it
-
-The obvious way to turn a pile of memories into a profile is to ask a model.
-This does not, and the reasons are the same ones that make entity extraction
-rule-based:
-
-- **Reproducibility.** Run it twice over unchanged memories and the wiki is
-  unchanged. A sampled model would reword your profile every night and there
-  would be no way to distinguish a real change from drift.
-- **Attribution.** Every sentence is assembled from specific memories, so each
-  citation is exact. A model asked to summarise *and* cite will occasionally
-  attribute a claim to the wrong source — and a wrong citation is worse than
-  none, because it launders a hallucination as evidence.
-- **Availability.** No credentials, no network, no cost.
-
-An LLM would write nicer prose. It would not make the profile more true.
-
-The one place judgement is genuinely needed — deciding what Orbis does not know
-about you — is done with vector coverage checks, and the thresholds there were
-measured too. Filtering each probe by the kind of memory that could satisfy it
-took accuracy from 6/9 to 7/9 and false-positives to zero. The threshold then
-went *tighter* rather than looser, because the errors are not symmetric: a false
-"covered" means Orbis silently believes it knows your job and never asks, while a
-false "not covered" costs one click to skip.
+- **`npm run db:up` fails** — Docker Desktop isn't running. Start it and retry.
+- **Search finds only exact words** — the model didn't load; check the banner
+  on the console and the `embedder` block in `/api/health`.
+- **A client won't connect** — the token is truncated in the config block
+  unless you just created one. Create a fresh token and paste the full value.
+- **`@modelcontextprotocol/server-http-sse` not found** — that package does
+  not exist on npm despite circulating in setup guides. The real bridge for
+  stdio-only clients (Claude Desktop, Zed) is `mcp-remote`, which the Setup
+  page's configs already use.
 
 ---
 
@@ -344,25 +200,35 @@ false "not covered" costs one click to skip.
    opencode ────┤   Streamable HTTP    memory · graph      vector index
    Antigravity ─┤   bearer auth        wiki · context      RLS · MVCC
    ChatGPT ─────┘                                          audit log
-                                            ▲
-   console (React) ──▶ /api/console         │
-   scripts ──────────▶ /api/v1              │
-                                     dream pass (scheduled)
+                                            ▲                  │
+   console (React) ──▶ /api/console         │                  │ CHANGEFEED
+   scripts ──────────▶ /api/v1              │                  ▼
+   Telegram bot ─────▶ same tool layer      └────────── the brain (worker)
+                                                 consolidate · merge · fade
 ```
+
+**The request path is serverless** (Lambda + API Gateway): an MCP call is a
+stateless round trip, and the same `handleHttp` function serves local
+development and production. **The thinking is not**: the brain holds a
+CockroachDB changefeed open — a query that never returns, which no 60-second
+function can hold — and consolidates within seconds of a write landing,
+debounced per account. If the changefeed drops it falls back to polling, and a
+15-minute sweep bounds staleness either way.
 
 **Four layers, one database.** Raw memories, extracted entities and edges,
 generated wiki pages with citations, and a personal profile. Systems in this
 space typically compose four datastores to get vector search, graph traversal,
-provenance and history. Doing it in one is the entire argument for putting agent
-memory in a distributed SQL database rather than beside one.
+provenance and history. Doing it in one is the entire argument for putting
+agent memory in a distributed SQL database rather than beside one.
 
 | Table | Role |
 |---|---|
-| `memory` | raw, vector-indexed, bitemporal |
+| `memory` | raw, vector-indexed, bitemporal (`valid_from`/`valid_to`) |
 | `memory_source` | **the lineage edge** — what makes correction propagation possible |
 | `entity` / `edge` | the extracted graph |
 | `wiki_page` / `wiki_citation` | generated pages and their receipts |
 | `interview_question` | what Orbis knows it does not know |
+| `scratch` | ephemeral working notes — expired by CockroachDB **row-level TTL** |
 | `tool_call` / `client_connection` | observability, and the Setup page's green light |
 | `audit_log` | append-only, written in the same transaction as each change |
 
@@ -374,34 +240,120 @@ options removes streaming entirely. That is honest here — Orbis has no
 server-initiated messages — and it keeps the same handler viable behind a
 serverless function.
 
-Nine tools, plus `search`/`fetch` aliases in OpenAI's schema so one endpoint also
-serves ChatGPT's deep-research path.
+Nine tools, plus `search`/`fetch` aliases in OpenAI's schema so one endpoint
+also serves ChatGPT's deep-research path. Governance lives at the protocol
+boundary, not in the console: `remember` refuses a memory with no substance,
+`search_memory` can never return a retracted memory, `correct` always reports
+what it invalidated. Ten agents from four vendors are held to one standard
+because the rule is in the endpoint they all share.
 
-Governance lives at the protocol boundary, not in the console: `remember`
-refuses a memory with no substance, `search_memory` can never return a retracted
-memory, `correct` always reports what it invalidated. Ten agents from four
-vendors are held to one standard because the rule is in the endpoint they all
-share.
+### Both directions of the protocol
+
+Orbis is also an MCP **client**: it connects out to CockroachDB Cloud's
+managed MCP server (`https://cockroachlabs.cloud/mcp`) with a hand-written
+Streamable HTTP client, so the chat agent can ask the cluster about itself in
+the same turn it asks memory about you. The tools it will call are an
+**enumerated read-only allowlist** in code — not the server's own
+`readOnlyHint` — because the Cloud server registers `insert_rows` and
+`delete_rows` for accounts with the roles, and a chat agent that can be talked
+into `delete_rows` on a production cluster is not a feature.
 
 ---
 
-## Connecting a client
+## Hackathon requirement coverage
 
-Every config in the console's Setup page is verified. One correction worth
-noting: **`@modelcontextprotocol/server-http-sse` does not exist on npm** — the
-registry returns 404. It appears in widely circulated setup tables for Claude
-Desktop, Cline and Roo. The real bridge package is `mcp-remote`.
+Stated plainly: what is wired and working, and what is not.
 
-| Client | Where |
+### CockroachDB tools — 3 of 4 (2 required)
+
+| Tool | Status |
 |---|---|
-| Claude Code | `claude mcp add --transport http` |
-| Codex CLI | `~/.codex/config.toml` |
-| opencode | `~/.config/opencode/opencode.json`, `type: "remote"` |
-| Antigravity | `~/.gemini/config/mcp_config.json` |
-| Cursor / Zed / Cline / Roo | standard `mcpServers` |
-| Claude Desktop | via `mcp-remote` |
-| Hermes Agent | its MCP config — which puts Orbis on Telegram, Discord, Slack and email |
-| ChatGPT | Developer mode connector; deep research uses the `search`/`fetch` aliases |
+| **Distributed Vector Indexing** | ✅ **In use.** Two C-SPANN indexes with `vector_cosine_ops`. The console runs `EXPLAIN` live and labels whether the index was chosen, so index use is falsifiable rather than asserted. |
+| **Agent Skills Repo** | ✅ **Installed** — 34 skills via `npx skills add cockroachlabs/cockroachdb-skills`. |
+| **Cloud Managed MCP Server** | ✅ **Consumed as a client** — live handshake, tool discovery, read-only allowlist, merged into the chat agent as `crdb_*` tools, surfaced in **activity → Cloud MCP**. |
+| ccloud CLI | ❌ Not used. Nothing in Orbis provisions clusters, which is what that CLI is for. |
+
+### AWS services — 4 in use (1 required)
+
+| Service | Status |
+|---|---|
+| **AWS Lambda** | ✅ Runs the whole application — MCP endpoint, REST API, console. |
+| **API Gateway (HTTP API)** | ✅ The public front door. |
+| **Secrets Manager** | ✅ Holds the DB connection string, CA cert, and Cloud API key. None are in the function's environment. |
+| **S3** | ✅ Deployment artefacts (the bundle exceeds the 50MB inline limit). |
+| Bedrock | ⚠️ **Coded, blocked, and no longer needed.** `InvokeModel` returns `ValidationException: Operation not allowed` — a new-account gate. Selection probes it first on every cold start, so if the account is ever unblocked Bedrock applies itself with no redeploy. |
+
+### What is real, and what is not
+
+**Real, and covered by tests against a live cluster:** semantic recall, the
+vector indexes and their query plans, correction propagation, bitemporal
+history, serializable retry behaviour under 20-way contention, row-level
+security, entity extraction, the MCP wire protocol (both sides), the
+changefeed-driven brain, consolidation — and all of it running on the deployed
+Lambda, not only locally.
+
+**Labelled honestly in the product:**
+
+- **Chat needs a key you supply** — without one it answers from retrieval
+  alone, with citations, and a banner says no model wrote the reply.
+- **The Telegram bot needs a bot token** — code and tests complete, no hosted
+  instance.
+- **The public demo is read-only** — every write control explains this rather
+  than failing. A bearer token unlocks writes.
+
+**Absent, by design:** no LLM in consolidation or entity extraction — see
+below for why. Nothing is simulated.
+
+---
+
+## Things that were measured, not assumed
+
+Full write-ups in [BLOG.md](BLOG.md); the short versions:
+
+**The 22MB on-device model beat the 130MB one.** MiniLM-L6-v2 (q8): 5/5 top-1
+on the retrieval benchmark with a 0.166 margin to the runner-up, 0.5s load.
+bge-small-en-v1.5: 4/5, 0.094, 9.4s. Higher absolute similarity scores, worse
+decisions. Absolute score is cosmetic; the margin is what makes recall
+trustworthy.
+
+**Two clauses silently disqualify a CockroachDB vector index.** An innocuous
+`AND embedding IS NOT NULL` drops the index entirely, and so does leaving a
+nullable prefix column unconstrained. Both return correct-looking rows; only
+`EXPLAIN` tells you. There is a test asserting the failure case *still fails*,
+so if CockroachDB ever fixes it, the suite says the workaround can go.
+
+**Enabling RLS is not enforcing it.** `root` bypasses policies and the table
+owner is exempt without `FORCE ROW LEVEL SECURITY`. The suite proves the
+least-privilege `orbis_app` role fails closed: unscoped sees 0 rows,
+cross-account writes are refused by `WITH CHECK`.
+
+**An absolute relevance cutoff cannot work; a relative one can.** A nonsense
+query's nearest memory can be *closer* than a fair question's. Cutting
+relative to the best hit (keep within 0.10) turned 6-result answers into
+1-result answers without losing genuine matches, and when even the best match
+is weak, the tool says so — a model told its retrieval was weak hedges instead
+of confidently paraphrasing noise.
+
+**Contention scales with latency, not just load.** A retry budget tuned
+against a 1ms localhost round trip exhausted itself at Cloud's 40ms. The tests
+run against both targets because of this.
+
+## Why consolidation has no LLM in it
+
+- **Reproducibility.** Run it twice over unchanged memories and the wiki is
+  unchanged. A sampled model would reword your profile every night, and there
+  would be no way to tell a real change from drift.
+- **Attribution.** Every sentence is assembled from specific memories, so
+  every citation is exact. A model asked to summarise *and* cite will
+  sometimes attribute a claim to the wrong source — and a wrong citation is
+  worse than none, because it launders a hallucination as evidence.
+- **Availability.** No credentials, no network, no cost.
+
+An LLM would write nicer prose. It would not make the profile more true. The
+one place judgement is genuinely needed — deciding what Orbis does *not* know
+about you — uses vector coverage checks whose thresholds were measured
+(filtering probes by memory kind took accuracy from 6/9 to 7/9 with zero
+false positives).
 
 ---
 
@@ -412,44 +364,28 @@ npm test                      # against the local 3-node cluster
 ORBIS_TARGET=cloud npm test   # against CockroachDB Cloud
 ```
 
-23 tests. Local: 23 pass. Cloud: 20 pass, 3 skipped — the RLS tests need the
-`orbis_app` role, which has no password on Cloud and skips cleanly rather than
-pretending to pass.
+56 tests across 13 suites; on Cloud, 53 pass and the 3 RLS tests skip
+cleanly (the `orbis_app` role has no password there) rather than pretending
+to pass.
 
-They run against a real cluster, never a mock. Every property worth testing here
-is a property of the database rather than of the TypeScript, and a mock would
-only assert that the code calls the functions it calls.
-
-They also honour `ORBIS_TARGET` because of a bug from the previous build: a retry
-budget tuned against a 1ms localhost round trip exhausted itself at Cloud's 40ms
-and surfaced an error to the caller. **Contention scales with latency, not just
-with load,** and testing only against localhost hid it.
-
-One harness note: the suites share a database, so they run with
-`--test-concurrency=1`. Run in parallel, one suite deleting rows while another
-runs `ANALYZE` shifts the optimizer's row estimate and makes query-plan
-assertions flaky — which cost twenty minutes to diagnose as a test bug rather
-than a product one.
-
----
+They run against a real cluster, never a mock — every property worth testing
+here is a property of the database, and a mock would only assert that the code
+calls the functions it calls. The suites cover memory semantics, the vector
+index plans, RLS enforcement, 20-way write contention, the MCP wire protocol
+from both sides, and the Telegram surface.
 
 ## Prior art
 
-Recorded because building something already solved would waste everyone's time.
-**No code from any of these was used.**
+Recorded because building something already solved would waste everyone's
+time. **No code from any of these was used.**
 
 | Project | What it contributed |
 |---|---|
-| [innernet](https://innernet.live) | The shape of the whole thing: one MCP endpoint, memory that follows you across tools, row-level privacy. Orbis is an independent implementation of that idea on CockroachDB. |
-| [open-second-brain](https://github.com/itechmeat/open-second-brain) | The "dream pass" — nightly consolidation promoting repeated signals into confirmed preferences with confidence bands. Adopted directly, reimplemented in SQL. |
-| [Command Code](https://commandcode.ai) | Taste profiles: confidence-scored preferences learned from accepts and rejects. Orbis imports these. |
+| [innernet](https://innernet.live) | The shape of the whole thing: one MCP endpoint, memory that follows you across tools. Orbis is an independent implementation of that idea on CockroachDB. |
+| [open-second-brain](https://github.com/itechmeat/open-second-brain) | The "dream pass" — consolidation promoting repeated signals into confirmed preferences. Adopted, reimplemented in SQL. |
+| [Command Code](https://commandcode.ai) | Taste profiles: confidence-scored preferences. Orbis imports these. |
 | [mem0](https://mem0.ai) | Extraction-first memory. Confirmed storage-and-retrieval is a crowded, solved space. |
 | [Zep / Graphiti](https://arxiv.org/abs/2501.13956) | Temporal knowledge graphs — pushed us to treat time as first-class. |
-
-MCP is an open standard; implementing it is independent of any product that also
-uses it.
-
----
 
 ## Licence
 
