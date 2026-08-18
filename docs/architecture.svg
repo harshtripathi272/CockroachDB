@@ -1,0 +1,152 @@
+<svg width="1600" height="1030" viewBox="0 0 1600 1030" xmlns="http://www.w3.org/2000/svg"
+     font-family="Segoe UI, Helvetica Neue, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#525252"/>
+    </marker>
+    <marker id="arrowBlue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#2563eb"/>
+    </marker>
+    <marker id="arrowViolet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#7c3aed"/>
+    </marker>
+  </defs>
+
+  <rect width="1600" height="1030" fill="#ffffff"/>
+
+  <!-- ═══════════════════════════ title ═══════════════════════════ -->
+  <text x="50" y="58" font-size="32" font-weight="600" fill="#171717" letter-spacing="-0.5">Orbis — how the pieces fit</text>
+  <text x="50" y="88" font-size="15" fill="#737373">One MCP endpoint · a serverless request path · a serverful brain · one database for vectors, graph, provenance and history</text>
+
+  <!-- ═══════════════════════ 1. CLIENTS ═══════════════════════ -->
+  <rect x="50" y="200" width="230" height="340" rx="12" fill="#fafafa" stroke="#e5e5e5"/>
+  <text x="72" y="232" font-size="11.5" font-weight="600" fill="#737373" letter-spacing="1.2">YOUR AI TOOLS</text>
+
+  <g font-size="14.5" fill="#171717">
+    <circle cx="80" cy="266" r="3" fill="#a3a3a3"/><text x="94" y="271">Claude Code</text>
+    <circle cx="80" cy="302" r="3" fill="#a3a3a3"/><text x="94" y="307">Cursor</text>
+    <circle cx="80" cy="338" r="3" fill="#a3a3a3"/><text x="94" y="343">Codex CLI</text>
+    <circle cx="80" cy="374" r="3" fill="#a3a3a3"/><text x="94" y="379">opencode</text>
+    <circle cx="80" cy="410" r="3" fill="#a3a3a3"/><text x="94" y="415">ChatGPT</text>
+    <circle cx="80" cy="446" r="3" fill="#a3a3a3"/><text x="94" y="451">Claude Desktop</text>
+    <circle cx="80" cy="482" r="3" fill="#a3a3a3"/><text x="94" y="487">Telegram bot</text>
+  </g>
+  <text x="72" y="519" font-size="11" fill="#a3a3a3">any MCP client · one address, one token</text>
+
+  <!-- ═══════════════════════ 2. AWS ═══════════════════════ -->
+  <rect x="400" y="170" width="500" height="550" rx="14" fill="#fffbf5" stroke="#fed7aa" stroke-width="1.5"/>
+  <text x="424" y="202" font-size="12" font-weight="600" fill="#c2410c" letter-spacing="1.2">AWS · ap-south-1</text>
+
+  <!-- API Gateway -->
+  <rect x="424" y="222" width="452" height="58" rx="9" fill="#ffffff" stroke="#e5e5e5"/>
+  <text x="444" y="248" font-size="15" font-weight="600" fill="#171717">API Gateway (HTTP API)</text>
+  <text x="444" y="268" font-size="11.5" fill="#737373">the public front door · TLS termination</text>
+
+  <line x1="650" y1="280" x2="650" y2="302" stroke="#525252" stroke-width="1.4" marker-end="url(#arrow)"/>
+
+  <!-- Lambda -->
+  <rect x="424" y="304" width="452" height="200" rx="9" fill="#ffffff" stroke="#d4d4d4" stroke-width="1.5"/>
+  <text x="444" y="331" font-size="16" font-weight="600" fill="#171717">AWS Lambda</text>
+  <text x="444" y="350" font-size="11.5" fill="#737373">one function — the entire application</text>
+  <g font-size="12.5" fill="#404040">
+    <text x="444" y="383">▸  /api/mcp — MCP endpoint, 9 tools + ChatGPT aliases</text>
+    <text x="444" y="410">▸  /api/v1 — REST, bearer authenticated</text>
+    <text x="444" y="437">▸  /api/console + the React console (static assets)</text>
+    <text x="444" y="464">▸  on-device MiniLM embedder — 22MB, in the bundle</text>
+  </g>
+  <text x="444" y="489" font-size="11" fill="#a3a3a3">the same handleHttp() runs locally and in production</text>
+
+  <!-- supporting services -->
+  <rect x="424" y="524" width="142" height="76" rx="8" fill="#ffffff" stroke="#e5e5e5"/>
+  <text x="440" y="551" font-size="12.5" font-weight="600" fill="#171717">Secrets Manager</text>
+  <text x="440" y="570" font-size="10" fill="#737373">DB connection string,</text>
+  <text x="440" y="585" font-size="10" fill="#737373">CA cert, Cloud API key</text>
+
+  <rect x="579" y="524" width="142" height="76" rx="8" fill="#ffffff" stroke="#e5e5e5"/>
+  <text x="595" y="551" font-size="12.5" font-weight="600" fill="#171717">Amazon S3</text>
+  <text x="595" y="570" font-size="10" fill="#737373">deploy bundle, 59MB</text>
+  <text x="595" y="585" font-size="10" fill="#737373">(&gt; 50MB inline limit)</text>
+
+  <rect x="734" y="524" width="142" height="76" rx="8" fill="#ffffff" stroke="#d4d4d4" stroke-dasharray="4 3"/>
+  <text x="750" y="551" font-size="12.5" font-weight="600" fill="#737373">Amazon Bedrock</text>
+  <text x="750" y="570" font-size="10" fill="#a3a3a3">probed every cold start</text>
+  <text x="750" y="585" font-size="10" fill="#a3a3a3">blocked → local fallback</text>
+
+  <text x="424" y="633" font-size="11.5" fill="#737373">Stateless by design: an MCP call is one round trip, so the request path</text>
+  <text x="424" y="651" font-size="11.5" fill="#737373">scales to zero when idle and out under load, with nothing to manage.</text>
+
+  <!-- ═══════════════════════ 3. COCKROACHDB ═══════════════════════ -->
+  <rect x="990" y="170" width="560" height="550" rx="14" fill="#f6f9ff" stroke="#bfdbfe" stroke-width="1.5"/>
+  <text x="1014" y="202" font-size="12" font-weight="600" fill="#1d4ed8" letter-spacing="1.2">COCKROACHDB CLOUD</text>
+
+  <rect x="1014" y="222" width="512" height="72" rx="9" fill="#ffffff" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="1034" y="249" font-size="15" font-weight="600" fill="#171717">memory</text>
+  <text x="1034" y="269" font-size="11.5" fill="#404040">raw · bitemporal (valid_from / valid_to) · status + confidence</text>
+  <text x="1034" y="285" font-size="11.5" font-weight="600" fill="#1d4ed8">2 × C-SPANN vector index (vector_cosine_ops)</text>
+
+  <g font-size="12.5">
+    <rect x="1014" y="306" width="512" height="42" rx="7" fill="#ffffff" stroke="#e5e5e5"/>
+    <text x="1034" y="332" fill="#171717"><tspan font-weight="600">memory_source</tspan><tspan fill="#737373" dx="10">—  the lineage edge, what makes correction propagate</tspan></text>
+
+    <rect x="1014" y="356" width="512" height="42" rx="7" fill="#ffffff" stroke="#e5e5e5"/>
+    <text x="1034" y="382" fill="#171717"><tspan font-weight="600">entity / edge</tspan><tspan fill="#737373" dx="10">—  the extracted knowledge graph</tspan></text>
+
+    <rect x="1014" y="406" width="512" height="42" rx="7" fill="#ffffff" stroke="#e5e5e5"/>
+    <text x="1034" y="432" fill="#171717"><tspan font-weight="600">wiki_page / wiki_citation</tspan><tspan fill="#737373" dx="10">—  generated pages + receipts</tspan></text>
+
+    <rect x="1014" y="456" width="512" height="42" rx="7" fill="#ffffff" stroke="#e5e5e5"/>
+    <text x="1034" y="482" fill="#171717"><tspan font-weight="600">scratch</tspan><tspan fill="#737373" dx="10">—  ephemeral notes, expired by row-level TTL</tspan></text>
+
+    <rect x="1014" y="506" width="512" height="42" rx="7" fill="#ffffff" stroke="#e5e5e5"/>
+    <text x="1034" y="532" fill="#171717"><tspan font-weight="600">tool_call / audit_log</tspan><tspan fill="#737373" dx="10">—  observability, append-only</tspan></text>
+  </g>
+
+  <text x="1014" y="573" font-size="11" fill="#737373">Row-level security · serializable transactions · MVCC time travel</text>
+
+  <!-- Managed MCP Server -->
+  <rect x="1014" y="592" width="512" height="72" rx="9" fill="#ffffff" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="1034" y="619" font-size="14.5" font-weight="600" fill="#1d4ed8">Cloud Managed MCP Server</text>
+  <text x="1034" y="639" font-size="11.5" fill="#404040">cockroachlabs.cloud/mcp — nodes, schema, running queries, EXPLAIN</text>
+  <text x="1034" y="656" font-size="11" fill="#737373">Orbis is the client here. Read-only allowlist enumerated in code.</text>
+
+  <!-- ═══════════════════════ arrows between columns ═══════════════════════ -->
+  <line x1="280" y1="330" x2="393" y2="330" stroke="#525252" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="336" y="309" font-size="11.5" font-weight="600" fill="#404040" text-anchor="middle">MCP over HTTPS</text>
+  <text x="336" y="324" font-size="10.5" fill="#737373" text-anchor="middle">bearer token</text>
+
+  <line x1="900" y1="400" x2="983" y2="400" stroke="#2563eb" stroke-width="1.6" marker-end="url(#arrowBlue)"/>
+  <text x="941" y="381" font-size="11.5" font-weight="600" fill="#1d4ed8" text-anchor="middle">SQL / TLS</text>
+  <text x="941" y="395" font-size="10" fill="#737373" text-anchor="middle">vector + graph</text>
+
+  <line x1="900" y1="628" x2="983" y2="628" stroke="#2563eb" stroke-width="1.6" stroke-dasharray="5 3" marker-end="url(#arrowBlue)"/>
+  <text x="941" y="609" font-size="11.5" font-weight="600" fill="#1d4ed8" text-anchor="middle">MCP client</text>
+  <text x="941" y="623" font-size="10" fill="#737373" text-anchor="middle">read-only</text>
+
+  <!-- ═══════════════════════ 4. THE BRAIN ═══════════════════════ -->
+  <rect x="560" y="790" width="620" height="150" rx="12" fill="#faf7ff" stroke="#ddd6fe" stroke-width="1.5"/>
+  <text x="584" y="822" font-size="12" font-weight="600" fill="#6d28d9" letter-spacing="1.2">THE BRAIN — A LONG-RUNNING WORKER</text>
+  <text x="584" y="850" font-size="13" fill="#404040">Consolidates memory whether or not anyone is watching: promotes repeated</text>
+  <text x="584" y="870" font-size="13" fill="#404040">observations into preferences, merges duplicate entities, rewrites the profile,</text>
+  <text x="584" y="890" font-size="13" fill="#404040">works out what it still doesn't know — and fades old memories, if you enable it.</text>
+  <text x="584" y="917" font-size="11" fill="#7c3aed">Reacts in seconds, debounced per account · 15-min sweep · polling fallback</text>
+
+  <!-- changefeed: CRDB down and into the brain -->
+  <path d="M 1270 720 L 1270 865 L 1183 865" fill="none" stroke="#7c3aed" stroke-width="1.8" marker-end="url(#arrowViolet)"/>
+  <text x="1290" y="786" font-size="12" font-weight="600" fill="#6d28d9">CHANGEFEED</text>
+  <text x="1290" y="803" font-size="10.5" fill="#737373">every commit, pushed by</text>
+  <text x="1290" y="818" font-size="10.5" fill="#737373">the database — not a poll</text>
+
+  <!-- brain writes back -->
+  <path d="M 1050 790 L 1050 722" fill="none" stroke="#7c3aed" stroke-width="1.8" marker-end="url(#arrowViolet)"/>
+  <text x="1038" y="766" font-size="10.5" fill="#737373" text-anchor="end">writes back</text>
+
+  <!-- why not lambda -->
+  <text x="560" y="975" font-size="11.5" fill="#737373">Why this cannot live on Lambda: a core changefeed is a query that never returns, and no 60-second function can hold one open.</text>
+  <text x="560" y="993" font-size="11.5" fill="#737373">The request path stays serverless; only the thinking moved. It is also the one thing a dedicated vector database cannot offer —</text>
+  <text x="560" y="1011" font-size="11.5" fill="#737373">there is no transaction log to tail.</text>
+
+  <!-- footer left -->
+  <text x="50" y="975" font-size="11" fill="#a3a3a3">Orbis</text>
+  <text x="50" y="993" font-size="11" fill="#a3a3a3">CockroachDB × AWS</text>
+  <text x="50" y="1011" font-size="11" fill="#a3a3a3">Hackathon 2026</text>
+</svg>

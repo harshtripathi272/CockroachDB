@@ -193,6 +193,8 @@ with `ORBIS_DEMO=1` — anonymous visitors get read-only; writes need a token.
 
 ## Architecture
 
+![Orbis architecture](docs/architecture.png)
+
 ```
    Claude Code ─┐
    Codex ───────┤
@@ -374,7 +376,18 @@ calls the functions it calls. The suites cover memory semantics, the vector
 index plans, RLS enforcement, 20-way write contention, the MCP wire protocol
 from both sides, and the Telegram surface.
 
+## Prior art
 
+Recorded because building something already solved would waste everyone's
+time. **No code from any of these was used.**
+
+| Project | What it contributed |
+|---|---|
+| [innernet](https://innernet.live) | The shape of the whole thing: one MCP endpoint, memory that follows you across tools. Orbis is an independent implementation of that idea on CockroachDB. |
+| [open-second-brain](https://github.com/itechmeat/open-second-brain) | The "dream pass" — consolidation promoting repeated signals into confirmed preferences. Adopted, reimplemented in SQL. |
+| [Command Code](https://commandcode.ai) | Taste profiles: confidence-scored preferences. Orbis imports these. |
+| [mem0](https://mem0.ai) | Extraction-first memory. Confirmed storage-and-retrieval is a crowded, solved space. |
+| [Zep / Graphiti](https://arxiv.org/abs/2501.13956) | Temporal knowledge graphs — pushed us to treat time as first-class. |
 
 ## Licence
 
