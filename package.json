@@ -27,7 +27,8 @@
     "chaos:heal": "docker start recall-roach2-1",
     "fetch-model": "node scripts/fetch-model.mjs",
     "deploy": "powershell -ExecutionPolicy Bypass -File deploy/deploy.ps1",
-    "telegram": "node services/telegram/bot.ts"
+    "telegram": "node services/telegram/bot.ts",
+    "brain": "node services/brain/worker.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.117.1",
