@@ -15,7 +15,7 @@ memory system with a brain — built in five days for the CockroachDB × AWS
 > This is the first image people see — make the browser window clean, no
 > devtools, no bookmarks bar if you can.
 
-![The Orbis console](screenshots/01-connect.png)
+
 
 ---
 
@@ -63,7 +63,7 @@ of it happen.
 > *reimbursement within thirty days*. The point of the shot: the query and the
 > result share no vocabulary.
 
-![Search by meaning, not keywords](screenshots/02-semantic-search.png)
+
 
 ---
 
@@ -125,7 +125,7 @@ path stays serverless; only the thinking moved.
 > consolidation line a few seconds after you save a memory from another window.
 > Dark terminal, readable font size.
 
-![The brain waking on a changefeed event](screenshots/03-brain-changefeed.png)
+
 
 ---
 
@@ -169,14 +169,14 @@ through and check, rather than trust.
 > contents on the right and at least one citation marker visible. This is the
 > "what a brand-new chat gets handed" shot.
 
-![A profile with receipts](screenshots/04-profile-wiki.png)
+
 
 > **📸 SCREENSHOT 5 — correction fallout.**
 > Open any memory in **memories**, click through to its trace/correct view so
 > the derived pages and entities are listed. The shot should show one memory at
 > the top and the things that would be affected below it.
 
-![What happens if this memory is wrong](screenshots/05-correction-trace.png)
+
 
 ---
 
@@ -201,7 +201,6 @@ reintroduces it believing it's harmless.
 > EXPLAIN output with the `vector search` line visible, index name
 > `memory_recall_global_idx` in the shot.
 
-![EXPLAIN, run live against the deployed cluster](screenshots/06-explain-plan.png)
 
 ### The embeddings story: the local model won, and I can prove it
 
@@ -281,7 +280,7 @@ on a production cluster is not a feature.
 > allowed/read-only markers. Take this one *after* granting the service
 > account its cluster role, so the panel shows tools instead of the diagnosis.
 
-![Orbis as an MCP client of CockroachDB Cloud](screenshots/07-cloud-mcp.png)
+
 
 The other creative surface is reach: a **Telegram bot** runs the same tool
 layer, so something noted on a phone during a walk is in Claude Code an hour
@@ -295,7 +294,7 @@ showing its tool trace under every reply.
 > real generative answer; otherwise the retrieval-only banner is itself an
 > honest shot worth taking.
 
-![The chat shows which memories it used](screenshots/08-ask-trace.png)
+
 
 ---
 
@@ -327,7 +326,7 @@ The path from demo to daily driver is deliberately short:
 > The **projects** page in master-detail: workspace list on the left, one
 > project open showing its memories, folders, and the scoped MCP config block.
 
-![Projects keep work and life apart](screenshots/09-projects.png)
+
 
 ---
 
@@ -357,7 +356,6 @@ The path from demo to daily driver is deliberately short:
 > The live demo URL in a fresh incognito window, showing the "You're looking
 > at the public demo" banner above the content. One shot, any page.
 
-![Anyone can look, nobody can touch](screenshots/10-readonly-banner.png)
 
 ### Observable
 
@@ -372,7 +370,6 @@ yourself appear in it.
 > table populated. Take it after clicking around the demo so the numbers are
 > alive.
 
-![Every read and write, accounted for](screenshots/11-activity.png)
 
 ### Scalable
 
@@ -407,7 +404,7 @@ CockroachDB *is*.
 > CockroachDB nodes, right pane a loop of Orbis searches continuing to answer.
 > If you only capture one terminal shot for the video, make it this one.
 
-![Kill a node, keep remembering](screenshots/12-chaos.png)
+
 
 ---
 
