@@ -109,7 +109,7 @@ function Activity() {
           ) : (
             <>
               <Bars data={series} height={90} />
-              <div className="row faint" style={{ fontSize: 11, marginTop: 6 }}>
+              <div className="row faint" style={{ fontSize: 13, marginTop: 6 }}>
                 <span>{series[0]?.label}</span>
                 <div className="spacer" />
                 <span>now</span>
@@ -175,7 +175,7 @@ function Activity() {
                 <tr key={c.id}>
                   <td className="faint">{relTime(c.at)}</td>
                   <td>{c.client}</td>
-                  <td className="mono" style={{ fontSize: 12 }}>{c.tool}</td>
+                  <td className="mono" style={{ fontSize: 13 }}>{c.tool}</td>
                   <td className="num">{c.latency_ms}</td>
                   <td className="num">{c.result_count || '—'}</td>
                   <td>
@@ -219,7 +219,7 @@ function Latency() {
           <tbody>
             {tools.map((t) => (
               <tr key={t.tool}>
-                <td className="mono" style={{ fontSize: 12.5 }}>{t.tool}</td>
+                <td className="mono" style={{ fontSize: 13.5 }}>{t.tool}</td>
                 <td className="num">{t.calls}</td>
                 <td className="num">{t.p50}</td>
                 <td className="num">{t.p95}</td>
@@ -276,7 +276,7 @@ function Growth() {
           ) : (
             <>
               <Bars data={series} height={90} />
-              <div className="row faint" style={{ fontSize: 11, marginTop: 6 }}>
+              <div className="row faint" style={{ fontSize: 13, marginTop: 6 }}>
                 <span>{series[0]?.label}</span>
                 <div className="spacer" />
                 <span>{series[series.length - 1]?.label}</span>
@@ -358,7 +358,7 @@ function Database() {
           <span className="hint">generated now — not a screenshot</span>
         </div>
         <div className="card-body col" style={{ gap: 12 }}>
-          <div className="faint" style={{ fontSize: 12.5 }}>
+          <div className="faint" style={{ fontSize: 13.5 }}>
             A vector index that is silently ignored still returns correct-looking rows, so the
             only way to know it is being used is to read the plan. Look for{' '}
             <code className="mono">vector search</code>.
@@ -393,8 +393,8 @@ function Database() {
             <tbody>
               {d.indexes.map((i: any, n: number) => (
                 <tr key={n}>
-                  <td className="mono" style={{ fontSize: 12 }}>{i.index_name}</td>
-                  <td className="mono" style={{ fontSize: 12 }}>{i.column_name}</td>
+                  <td className="mono" style={{ fontSize: 13 }}>{i.index_name}</td>
+                  <td className="mono" style={{ fontSize: 13 }}>{i.column_name}</td>
                   <td className="faint">{i.direction}</td>
                 </tr>
               ))}
@@ -411,7 +411,7 @@ function Database() {
           </span>
         </div>
         {d?.rangesError ? (
-          <div className="card-body faint" style={{ fontSize: 12.5 }}>
+          <div className="card-body faint" style={{ fontSize: 13.5 }}>
             {d.rangesError}
             <div style={{ marginTop: 6 }}>
               Serverless clusters do not expose node topology — this panel is populated when
@@ -437,7 +437,7 @@ function Database() {
       </div>
 
       {d?.version && (
-        <div className="faint mono" style={{ fontSize: 11.5 }}>{d.version}</div>
+        <div className="faint mono" style={{ fontSize: 13 }}>{d.version}</div>
       )}
     </>
   );
@@ -490,7 +490,7 @@ function CloudMcp() {
           </Badge>
         </div>
         <div className="card-body col" style={{ gap: 10 }}>
-          <div className="faint" style={{ fontSize: 12.5 }}>
+          <div className="faint" style={{ fontSize: 13.5 }}>
             Orbis is an MCP server — that is the whole product. This is the other direction:
             Orbis connecting out as an MCP <em>client</em> to a server it does not own, so the
             chat agent can ask CockroachDB about the cluster in the same turn it asks memory
@@ -501,7 +501,7 @@ function CloudMcp() {
             <tbody>
               <tr>
                 <td className="faint" style={{ width: 130 }}>Endpoint</td>
-                <td className="mono" style={{ fontSize: 12 }}>{s?.url ?? '—'}</td>
+                <td className="mono" style={{ fontSize: 13 }}>{s?.url ?? '—'}</td>
               </tr>
               <tr>
                 <td className="faint">Authentication</td>
@@ -513,7 +513,7 @@ function CloudMcp() {
               </tr>
               <tr>
                 <td className="faint">Scope</td>
-                <td className="mono" style={{ fontSize: 12 }}>
+                <td className="mono" style={{ fontSize: 13 }}>
                   {s?.clusterId
                     ? <>cluster {s.clusterId} <span className="faint">(mcp-cluster-id header)</span></>
                     : <span className="faint">every cluster the service account can reach</span>}
@@ -530,7 +530,7 @@ function CloudMcp() {
                   </tr>
                   <tr>
                     <td className="faint">Protocol</td>
-                    <td className="mono" style={{ fontSize: 12 }}>{s?.protocolVersion}</td>
+                    <td className="mono" style={{ fontSize: 13 }}>{s?.protocolVersion}</td>
                   </tr>
                 </>
               )}
@@ -556,7 +556,7 @@ function CloudMcp() {
             <button className="btn" onClick={() => api.cloud(true).then(() => status.reload())}>
               Probe again
             </button>
-            {s && <span className="faint" style={{ fontSize: 12 }}>checked {relTime(s.checkedAt)}</span>}
+            {s && <span className="faint" style={{ fontSize: 13 }}>checked {relTime(s.checkedAt)}</span>}
           </div>
         </div>
       </div>
@@ -571,7 +571,7 @@ function CloudMcp() {
           </span>
         </div>
         <div className="card-body col" style={{ gap: 10 }}>
-          <div className="faint" style={{ fontSize: 12.5 }}>
+          <div className="faint" style={{ fontSize: 13.5 }}>
             The allowlist is enumerated in code, not derived from the server's own
             read-only hints. The Cloud server will register <code className="mono">insert_rows</code>,{' '}
             <code className="mono">update_rows</code> and <code className="mono">delete_rows</code> for
@@ -587,7 +587,7 @@ function CloudMcp() {
                 const found = s?.tools.find((t) => t.name === name);
                 return (
                   <tr key={name}>
-                    <td className="mono" style={{ fontSize: 12 }}>{name}</td>
+                    <td className="mono" style={{ fontSize: 13 }}>{name}</td>
                     <td>
                       {!live
                         ? <span className="faint">—</span>
@@ -595,7 +595,7 @@ function CloudMcp() {
                           ? <Badge tone="ok">live</Badge>
                           : <Badge tone="warn">not offered</Badge>}
                     </td>
-                    <td className="faint truncate" style={{ fontSize: 12 }}>
+                    <td className="faint truncate" style={{ fontSize: 13 }}>
                       {found?.description ?? ''}
                     </td>
                   </tr>
@@ -605,7 +605,7 @@ function CloudMcp() {
           </table>
 
           {live && s!.tools.some((t) => !s!.allowlist.includes(t.name)) && (
-            <div className="faint" style={{ fontSize: 12 }}>
+            <div className="faint" style={{ fontSize: 13 }}>
               Also advertised, and deliberately not called:{' '}
               <span className="mono">
                 {s!.tools.filter((t) => !s!.allowlist.includes(t.name)).map((t) => t.name).join(', ')}
@@ -635,13 +635,13 @@ function CloudMcp() {
           </div>
 
           <div className="col" style={{ gap: 6 }}>
-            <label className="faint" style={{ fontSize: 12 }}>
+            <label className="faint" style={{ fontSize: 13 }}>
               explain_query — ask CockroachDB's own tooling whether the vector index is used
             </label>
             <textarea
               className="input mono"
               rows={3}
-              style={{ fontSize: 12 }}
+              style={{ fontSize: 13 }}
               value={sql}
               onChange={(e) => setSql(e.target.value)}
             />
@@ -661,7 +661,7 @@ function CloudMcp() {
               <div className="row" style={{ marginBottom: 5 }}>
                 <strong style={{ fontSize: 13 }} className="mono">{result.tool}</strong>
                 <Badge tone={result.ok ? 'ok' : 'danger'}>{result.ok ? 'ok' : 'failed'}</Badge>
-                {result.ms > 0 && <span className="faint" style={{ fontSize: 12 }}>{result.ms}ms</span>}
+                {result.ms > 0 && <span className="faint" style={{ fontSize: 13 }}>{result.ms}ms</span>}
               </div>
               <CodeBlock code={result.text} />
             </div>
@@ -694,9 +694,9 @@ function Audit() {
             {entries.data.map((e: any) => (
               <tr key={e.id}>
                 <td className="faint">{relTime(e.at)}</td>
-                <td className="mono" style={{ fontSize: 12 }}>{e.action}</td>
+                <td className="mono" style={{ fontSize: 13 }}>{e.action}</td>
                 <td className="faint">{e.target_kind}</td>
-                <td className="faint mono truncate" style={{ fontSize: 11.5 }}>
+                <td className="faint mono truncate" style={{ fontSize: 13 }}>
                   {JSON.stringify(e.detail)}
                 </td>
               </tr>

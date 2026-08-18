@@ -1,14 +1,19 @@
 import { useState } from 'react';
 import { api } from '../lib/api.ts';
 import type { Bootstrap, Memory, TreeNode, Workspace } from '../lib/api.ts';
-import { Badge, Drawer, Empty, kindTone, relTime, useAsync } from '../lib/ui.tsx';
+import { Badge, CodeBlock, Empty, kindTone, relTime, useAsync } from '../lib/ui.tsx';
 
 /**
- * Workspaces and their folder trees.
+ * Projects — list, then one project in full.
  *
- * Ordinary folders and projects, because that is the mental model people
- * already carry for their own work. Inventing a novel organising metaphor would
- * mean teaching it, and nothing here is improved by being unfamiliar.
+ * This page used to be a grid of cards where the only action, "view this
+ * workspace", set a global filter and left you looking at the same grid. A
+ * project is the main organising idea in the product and opening one did
+ * nothing, which made the whole feature look decorative.
+ *
+ * So it is master–detail now. The list answers "what have I got"; the detail
+ * answers "what is in this one, and how do I point a tool at just it". Nothing
+ * is behind a tab that a person would need on first visit.
  */
 export function Workspaces({
   boot,
@@ -23,36 +28,55 @@ export function Workspaces({
   toast: (m: string, t?: 'ok' | 'danger') => void;
   reload: () => void;
 }) {
+  const [openId, setOpenId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
-  const active = workspace ?? boot.workspaces.find((w) => w.isDefault)?.id ?? boot.workspaces[0]?.id;
+
+  const open = boot.workspaces.find((w) => w.id === openId);
+
+  if (open) {
+    return (
+      <ProjectDetail
+        ws={open}
+        onBack={() => setOpenId(null)}
+        isFilter={workspace === open.id}
+        setWorkspace={setWorkspace}
+        toast={toast}
+      />
+    );
+  }
 
   return (
     <>
-      <div className="row">
-        <div className="faint" style={{ fontSize: 12.5 }}>
-          A workspace scopes what an agent recalls. Ask about deployment in one project and you
-          should not get another project's deployment notes.
-        </div>
+      <div className="row" style={{ marginBottom: 4 }}>
         <div className="spacer" />
-        <button className="btn primary" onClick={() => setCreating(true)}>New workspace</button>
+        <button className="btn primary" onClick={() => setCreating(true)}>New project</button>
       </div>
 
-      <div className="grid-2">
-        {boot.workspaces.map((w) => (
-          <WorkspaceCard
-            key={w.id}
-            ws={w}
-            active={w.id === active}
-            onSelect={() => setWorkspace(w.id)}
-            toast={toast}
-            reload={reload}
-          />
-        ))}
-      </div>
-
-      {boot.workspaces.length === 0 && (
+      {boot.workspaces.length === 0 ? (
         <div className="card">
-          <Empty icon="▤" title="No workspaces" hint="Create one to start organising." />
+          <Empty
+            title="No projects yet"
+            hint="A project keeps one piece of work separate from the rest. Ask about deployment inside “Website” and you should never get the app's deployment notes back."
+          />
+        </div>
+      ) : (
+        <div className="grid-2">
+          {boot.workspaces.map((w) => (
+            <button key={w.id} className="proj-card" onClick={() => setOpenId(w.id)}>
+              <div className="proj-card-top">
+                <span className="proj-dot" style={{ background: w.color || 'var(--accent)' }} />
+                <h3>{w.name}</h3>
+                {w.isDefault && <Badge>default</Badge>}
+              </div>
+              <p className="proj-desc">
+                {w.description || 'No description yet.'}
+              </p>
+              <div className="proj-card-foot">
+                <span><strong>{w.memoryCount ?? 0}</strong> memories</span>
+                <span className="faint">open →</span>
+              </div>
+            </button>
+          ))}
         </div>
       )}
 
@@ -67,184 +91,181 @@ export function Workspaces({
   );
 }
 
-function WorkspaceCard({
-  ws,
-  active,
-  onSelect,
-  toast,
-  reload,
+/* -------------------------------------------------------------------------- */
+
+function ProjectDetail({
+  ws, onBack, isFilter, setWorkspace, toast,
 }: {
   ws: Workspace;
-  active: boolean;
-  onSelect: () => void;
+  onBack: () => void;
+  isFilter: boolean;
+  setWorkspace: (id: string | null) => void;
   toast: (m: string, t?: 'ok' | 'danger') => void;
-  reload: () => void;
 }) {
+  const memories = useAsync<Memory[]>(() => api.memories({ workspace: ws.id, limit: 60 }), [ws.id]);
   const tree = useAsync<TreeNode[]>(() => api.tree(ws.id), [ws.id]);
-  const [openNode, setOpenNode] = useState<TreeNode | null>(null);
-  const [addingTo, setAddingTo] = useState<string | null | undefined>(undefined);
-  const [name, setName] = useState('');
+  const [adding, setAdding] = useState(false);
+  const [folderName, setFolderName] = useState('');
 
-  const addNode = async (parentId: string | null) => {
-    if (name.trim().length < 1) return;
+  const origin = window.location.origin;
+
+  async function addFolder() {
+    const name = folderName.trim();
+    if (name.length < 2) return;
     try {
-      await api.createNode({ workspaceId: ws.id, parentId, name: name.trim() });
-      setName('');
-      setAddingTo(undefined);
+      await api.createNode({ workspaceId: ws.id, name });
+      setFolderName('');
+      setAdding(false);
       tree.reload();
-      toast('Folder created', 'ok');
-      reload();
+      toast(`Added “${name}”`);
     } catch (e) {
       toast((e as Error).message, 'danger');
     }
-  };
+  }
 
   return (
-    <div className="card" style={active ? { borderColor: 'var(--accent-border)' } : undefined}>
-      <div className="card-head">
-        <h3>{ws.name}</h3>
-        {ws.isDefault && <Badge>default</Badge>}
-        {active && <Badge tone="accent">viewing</Badge>}
+    <>
+      <div className="detail-bar">
+        <button className="btn ghost" onClick={onBack}>← All projects</button>
         <div className="spacer" />
-        <span className="faint" style={{ fontSize: 11.5 }}>{ws.memoryCount ?? 0} memories</span>
+        <button
+          className={`btn${isFilter ? '' : ' primary'}`}
+          onClick={() => setWorkspace(isFilter ? null : ws.id)}
+        >
+          {isFilter ? 'Showing only this everywhere' : 'Show only this everywhere'}
+        </button>
       </div>
 
-      <div className="card-body col" style={{ gap: 8 }}>
-        {ws.description && <div className="muted" style={{ fontSize: 12.5 }}>{ws.description}</div>}
-
-        <div className="col" style={{ gap: 1 }}>
-          {tree.loading && !tree.data ? (
-            <div className="skeleton" style={{ height: 46 }} />
-          ) : !tree.data?.length ? (
-            <div className="faint" style={{ fontSize: 12.5, padding: '6px 0' }}>
-              No folders yet — memories live at the workspace root.
-            </div>
-          ) : (
-            tree.data.map((n) => (
-              <NodeRow key={n.id} node={n} depth={0} onOpen={setOpenNode} />
-            ))
-          )}
+      <div className="detail-head">
+        <span className="proj-dot lg" style={{ background: ws.color || 'var(--accent)' }} />
+        <div>
+          <h2>{ws.name}</h2>
+          <p className="prose" style={{ marginTop: 6, marginBottom: 0 }}>
+            {ws.description || 'No description yet.'}
+          </p>
         </div>
+      </div>
 
-        {addingTo !== undefined ? (
-          <div className="row" style={{ gap: 6 }}>
-            <input
-              className="input"
-              autoFocus
-              placeholder="Folder name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') void addNode(addingTo ?? null);
-                if (e.key === 'Escape') setAddingTo(undefined);
-              }}
+      <div className="grid-3">
+        <div className="stat">
+          <div className="label">Memories here</div>
+          <div className="value">{memories.data?.length ?? ws.memoryCount ?? 0}</div>
+          <div className="foot">everything saved to this project</div>
+        </div>
+        <div className="stat">
+          <div className="label">Folders</div>
+          <div className="value">{tree.data?.length ?? 0}</div>
+          <div className="foot">optional — for splitting a big project up</div>
+        </div>
+        <div className="stat">
+          <div className="label">Last saved</div>
+          <div className="value" style={{ fontSize: 19, marginTop: 9 }}>
+            {memories.data?.[0] ? relTime(memories.data[0].createdAt) : '—'}
+          </div>
+          <div className="foot">{memories.data?.[0]?.client ?? 'nothing yet'}</div>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card-head">
+          <h3>What’s in here</h3>
+          <span className="hint">newest first</span>
+        </div>
+        {!memories.data ? (
+          <div className="card-body"><div className="skeleton" style={{ height: 90 }} /></div>
+        ) : memories.data.length === 0 ? (
+          <div className="card-body">
+            <Empty
+              title="Nothing saved to this project yet"
+              hint="Point a tool at it using the block below, then ask it to remember something."
             />
-            <button className="btn sm primary" onClick={() => addNode(addingTo ?? null)}>Add</button>
-            <button className="btn sm ghost" onClick={() => setAddingTo(undefined)}>Cancel</button>
           </div>
         ) : (
-          <div className="row" style={{ gap: 6 }}>
-            <button className="btn sm ghost" onClick={() => setAddingTo(null)}>+ folder</button>
-            {!active && (
-              <button className="btn sm ghost" onClick={onSelect}>view this workspace</button>
-            )}
+          <div className="mem-list">
+            {memories.data.map((m) => (
+              <div key={m.id} className="mem-row">
+                <div className="mem-row-head">
+                  <strong>{m.title}</strong>
+                  <Badge tone={kindTone(m.kind)}>{m.kind}</Badge>
+                </div>
+                <div className="mem-row-body">{m.body}</div>
+                <div className="mem-row-foot faint">
+                  {relTime(m.createdAt)} · saved by {m.client}
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>
 
-      {openNode && (
-        <NodeDrawer node={openNode} onClose={() => setOpenNode(null)} />
-      )}
-    </div>
-  );
-}
-
-function NodeRow({
-  node,
-  depth,
-  onOpen,
-}: {
-  node: TreeNode;
-  depth: number;
-  onOpen: (n: TreeNode) => void;
-}) {
-  const [open, setOpen] = useState(depth < 1);
-  const hasChildren = Boolean(node.children?.length);
-
-  return (
-    <>
-      <div
-        className="row"
-        style={{
-          padding: '3px 4px',
-          paddingLeft: 4 + depth * 14,
-          borderRadius: 4,
-          cursor: 'pointer',
-          fontSize: 13,
-        }}
-        onClick={() => (hasChildren ? setOpen(!open) : onOpen(node))}
-      >
-        <span className="faint" style={{ width: 12, fontSize: 10 }}>
-          {hasChildren ? (open ? '▾' : '▸') : '·'}
-        </span>
-        <span>{node.name}</span>
-        <div className="spacer" />
-        {node.memoryCount ? (
-          <span className="faint" style={{ fontSize: 11 }}>{node.memoryCount}</span>
-        ) : null}
-        <button
-          className="btn sm ghost"
-          style={{ padding: '0 4px', fontSize: 11 }}
-          onClick={(e) => { e.stopPropagation(); onOpen(node); }}
-        >
-          open
-        </button>
+      <div className="card">
+        <div className="card-head">
+          <h3>Folders</h3>
+          <span className="hint">only if this project is big enough to need them</span>
+          <div className="spacer" />
+          {!adding && (
+            <button className="btn sm" onClick={() => setAdding(true)}>Add folder</button>
+          )}
+        </div>
+        <div className="card-body">
+          {adding && (
+            <div className="row" style={{ marginBottom: 12 }}>
+              <input
+                className="input"
+                autoFocus
+                placeholder="Folder name"
+                value={folderName}
+                onChange={(e) => setFolderName(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && addFolder()}
+              />
+              <button className="btn primary" onClick={addFolder}>Add</button>
+              <button className="btn ghost" onClick={() => { setAdding(false); setFolderName(''); }}>
+                Cancel
+              </button>
+            </div>
+          )}
+          {!tree.data?.length ? (
+            <div className="faint">No folders. Most projects never need any.</div>
+          ) : (
+            <div className="folder-list">
+              {tree.data.map((n) => (
+                <div key={n.id} className="folder-row">
+                  <span className="folder-name">{n.name}</span>
+                  <span className="faint">{n.memoryCount ?? 0}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
-      {open &&
-        node.children?.map((c) => (
-          <NodeRow key={c.id} node={c} depth={depth + 1} onOpen={onOpen} />
-        ))}
+
+      <div className="card">
+        <div className="card-head">
+          <h3>Point a tool at only this project</h3>
+          <span className="hint">it will read and write here, and nowhere else</span>
+        </div>
+        <div className="card-body">
+          <p className="prose" style={{ fontSize: 15 }}>
+            Same address as always, with this project’s name on the end. Useful when a tool
+            lives inside one repo and should never see the rest of your memory.
+          </p>
+          <CodeBlock
+            lang="bash"
+            code={`claude mcp add --transport http orbis-${ws.slug} \\
+  ${origin}/api/mcp \\
+  --header "Authorization: Bearer <your key>" \\
+  --header "X-Orbis-Workspace: ${ws.slug}"`}
+          />
+        </div>
+      </div>
     </>
   );
 }
 
-function NodeDrawer({ node, onClose }: { node: TreeNode; onClose: () => void }) {
-  const mems = useAsync<Memory[]>(() => api.memories({ node: node.id, limit: 100 }), [node.id]);
-
-  return (
-    <Drawer title={node.name} onClose={onClose}>
-      <div className="faint mono" style={{ fontSize: 12 }}>{node.path}</div>
-      {node.summary && <div className="muted">{node.summary}</div>}
-      <div className="card">
-        <div className="card-head">
-          <h3>Memories here</h3>
-          <span className="hint">{mems.data?.length ?? 0}</span>
-        </div>
-        {!mems.data?.length ? (
-          <Empty title="Nothing filed here yet" />
-        ) : (
-          mems.data.map((m) => (
-            <div className="mem" key={m.id}>
-              <div className="mem-title">{m.title}</div>
-              <div className="mem-body">{m.body}</div>
-              <div className="mem-meta">
-                <Badge tone={kindTone(m.kind)}>{m.kind}</Badge>
-                <span>{m.client}</span>
-                <span>·</span>
-                <span>{relTime(m.createdAt)}</span>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-    </Drawer>
-  );
-}
+/* -------------------------------------------------------------------------- */
 
 function NewWorkspace({
-  onClose,
-  onSaved,
-  toast,
+  onClose, onSaved, toast,
 }: {
   onClose: () => void;
   onSaved: () => void;
@@ -254,48 +275,57 @@ function NewWorkspace({
   const [description, setDescription] = useState('');
   const [busy, setBusy] = useState(false);
 
-  const save = async () => {
+  async function save() {
     setBusy(true);
     try {
       await api.createWorkspace({ name: name.trim(), description: description.trim() });
-      toast('Workspace created', 'ok');
+      toast(`Created “${name.trim()}”`);
       onSaved();
     } catch (e) {
       toast((e as Error).message, 'danger');
-    } finally {
       setBusy(false);
     }
-  };
+  }
 
   return (
-    <Drawer title="New workspace" onClose={onClose}>
-      <div className="field">
-        <label>Name</label>
-        <input
-          className="input"
-          autoFocus
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Side projects"
-        />
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h3 style={{ marginBottom: 4 }}>New project</h3>
+        <p className="faint" style={{ marginBottom: 18 }}>
+          A project keeps one piece of work separate from everything else.
+        </p>
+
+        <div className="field">
+          <label htmlFor="p-name">Name</label>
+          <input
+            id="p-name"
+            className="input"
+            autoFocus
+            placeholder="Website redesign"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && name.trim().length >= 2 && save()}
+          />
+        </div>
+
+        <div className="field" style={{ marginTop: 14 }}>
+          <label htmlFor="p-desc">What is it? <span className="faint">optional</span></label>
+          <input
+            id="p-desc"
+            className="input"
+            placeholder="Copy, layout and launch plan"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+          />
+        </div>
+
+        <div className="row" style={{ marginTop: 22, justifyContent: 'flex-end' }}>
+          <button className="btn ghost" onClick={onClose}>Cancel</button>
+          <button className="btn primary" onClick={save} disabled={busy || name.trim().length < 2}>
+            {busy ? 'Creating…' : 'Create project'}
+          </button>
+        </div>
       </div>
-      <div className="field">
-        <label>What is it for?</label>
-        <textarea
-          className="input"
-          rows={3}
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          placeholder="Given to agents as context when they work in this workspace."
-        />
-      </div>
-      <div className="row">
-        <div className="spacer" />
-        <button className="btn ghost" onClick={onClose}>Cancel</button>
-        <button className="btn primary" onClick={save} disabled={busy || name.trim().length < 2}>
-          {busy ? 'Creating…' : 'Create'}
-        </button>
-      </div>
-    </Drawer>
+    </div>
   );
 }

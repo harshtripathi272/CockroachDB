@@ -110,7 +110,7 @@ export function Train({
                 {current?.question}
               </div>
               {current?.why && (
-                <div className="faint" style={{ fontSize: 12.5, marginTop: -6 }}>
+                <div className="faint" style={{ fontSize: 13.5, marginTop: -6 }}>
                   {current.why}
                 </div>
               )}
@@ -128,7 +128,7 @@ export function Train({
               />
 
               <div className="row">
-                <span className="faint" style={{ fontSize: 11.5 }}>
+                <span className="faint" style={{ fontSize: 13 }}>
                   <span className="kbd">⌘</span> <span className="kbd">↵</span> to save
                 </span>
                 <div className="spacer" />

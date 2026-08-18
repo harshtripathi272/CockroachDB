@@ -85,7 +85,7 @@ export function Profile({
             {profile.citations && profile.citations.length > 0 && (
               <>
                 <div className="divider" style={{ margin: '16px 0 10px' }} />
-                <div className="faint" style={{ fontSize: 11, marginBottom: 6 }}>
+                <div className="faint" style={{ fontSize: 13, marginBottom: 6 }}>
                   EVERY CLAIM ABOVE COMES FROM ONE OF THESE
                 </div>
                 <div className="row wrap" style={{ gap: 5 }}>
@@ -93,7 +93,7 @@ export function Profile({
                     <button
                       key={c.memoryId + c.claim}
                       className="btn sm"
-                      style={{ fontSize: 11.5 }}
+                      style={{ fontSize: 13 }}
                       onClick={() => setOpenSource(c.memoryId)}
                       title={c.claim || c.memoryTitle}
                     >
@@ -116,7 +116,7 @@ export function Profile({
           <h3>How you like to work</h3>
           <span className="hint">handed to every agent that connects</span>
           <div className="spacer" />
-          <span className="faint" style={{ fontSize: 11.5 }}>
+          <span className="faint" style={{ fontSize: 13 }}>
             stronger evidence ranks higher
           </span>
         </div>
@@ -143,7 +143,7 @@ export function Profile({
                   <tr key={p.id} className="clickable" onClick={() => setOpenSource(p.id)}>
                     <td>
                       <div style={{ fontWeight: 550 }}>{p.title}</div>
-                      <div className="muted" style={{ fontSize: 12.5 }}>{p.body}</div>
+                      <div className="muted" style={{ fontSize: 13.5 }}>{p.body}</div>
                     </td>
                     <td>
                       <Confidence value={p.confidence} evidence={p.evidenceCount} />
@@ -177,7 +177,7 @@ export function Profile({
                     <strong>{p.title}</strong>
                     {p.stale && <Badge tone="warn">stale</Badge>}
                     {p.summary && (
-                      <div className="muted" style={{ fontSize: 12.5 }}>{p.summary}</div>
+                      <div className="muted" style={{ fontSize: 13.5 }}>{p.summary}</div>
                     )}
                   </td>
                   <td><Badge>{p.kind}</Badge></td>
@@ -219,7 +219,7 @@ function SourceDrawer({
             <Badge>{m.kind}</Badge>
             <Badge tone={m.status === 'active' ? 'ok' : 'danger'}>{m.status}</Badge>
             <Confidence value={m.confidence} evidence={m.evidenceCount} />
-            <span className="faint" style={{ fontSize: 12 }}>
+            <span className="faint" style={{ fontSize: 13 }}>
               recorded by {m.client} · {relTime(m.createdAt)}
             </span>
           </div>

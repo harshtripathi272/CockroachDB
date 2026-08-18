@@ -67,7 +67,7 @@ export function Memories({
       </div>
 
       {debounced && (
-        <div className="faint" style={{ fontSize: 12 }}>
+        <div className="faint" style={{ fontSize: 13 }}>
           {list.data?.length ?? 0} semantic matches
           {tookMs !== null && ` · ${tookMs}ms`}
           {' · ranked by meaning, not keywords'}
@@ -229,7 +229,7 @@ function MemoryDetail({
             <Badge tone={kindTone(m.kind)}>{m.kind}</Badge>
             <Badge tone={statusTone(m.status)}>{m.status}</Badge>
             <Confidence value={m.confidence} evidence={m.evidenceCount} />
-            <span className="faint" style={{ fontSize: 12 }}>
+            <span className="faint" style={{ fontSize: 13 }}>
               via {m.client} · {relTime(m.createdAt)}
             </span>
             <div className="spacer" />
@@ -320,7 +320,7 @@ function MemoryDetail({
               trace.data.memories.map((d) => (
                 <div className="mem" key={d.id}>
                   <div className="mem-title">
-                    <span className="faint mono" style={{ fontSize: 11 }}>
+                    <span className="faint mono" style={{ fontSize: 13 }}>
                       {'→'.repeat(d.hops ?? 1)}{' '}
                     </span>
                     {d.title}
@@ -424,7 +424,7 @@ function AddMemory({
         </select>
       </div>
       <div className="row">
-        <div className="faint" style={{ fontSize: 11.5 }}>
+        <div className="faint" style={{ fontSize: 13 }}>
           Near-identical memories are merged rather than duplicated.
         </div>
         <div className="spacer" />

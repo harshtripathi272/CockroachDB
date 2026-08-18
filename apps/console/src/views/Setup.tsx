@@ -252,7 +252,7 @@ export function Setup({
             <button className="btn primary" onClick={createToken}>
               Create a token
             </button>
-            <span className="faint" style={{ fontSize: 12.5 }}>
+            <span className="faint" style={{ fontSize: 13.5 }}>
               {tokens.data?.filter((t) => !t.revoked_at).length ?? 0} active
             </span>
           </div>
@@ -288,7 +288,7 @@ export function Setup({
                   key={c.id}
                   className={`btn${client.id === c.id ? ' primary' : ''}`}
                   onClick={() => setClient(c)}
-                  style={{ fontSize: 12.5 }}
+                  style={{ fontSize: 13.5 }}
                 >
                   {conn && <span className="dot" style={{ color: 'var(--ok)' }} />}
                   {c.name}
@@ -299,18 +299,18 @@ export function Setup({
 
           <div className="col" style={{ gap: 6 }}>
             <div className="row" style={{ gap: 8 }}>
-              <span className="faint" style={{ fontSize: 12 }}>{client.where}</span>
+              <span className="faint" style={{ fontSize: 13 }}>{client.where}</span>
             </div>
             <CodeBlock code={client.config(endpoint, tokenForConfig)} lang={client.lang} />
             {!revealed && live && (
-              <div className="faint" style={{ fontSize: 11.5 }}>
+              <div className="faint" style={{ fontSize: 13 }}>
                 The token above is truncated. Create a new one to get a pasteable value.
               </div>
             )}
             {client.note && (
               <div className="banner info" style={{ marginTop: 2 }}>
                 <span className="dot" />
-                <div className="body" style={{ fontSize: 12.5 }}>{client.note}</div>
+                <div className="body" style={{ fontSize: 13.5 }}>{client.note}</div>
               </div>
             )}
           </div>
@@ -362,7 +362,7 @@ export function Setup({
                       {c.client_version && <span className="faint">{c.client_version}</span>}
                     </span>
                   </td>
-                  <td className="mono" style={{ fontSize: 11.5 }}>{c.protocol || '—'}</td>
+                  <td className="mono" style={{ fontSize: 13 }}>{c.protocol || '—'}</td>
                   <td className="num">{c.call_count}</td>
                   <td className="faint">{relTime(c.first_seen)}</td>
                   <td>{relTime(c.last_seen)}</td>
@@ -393,7 +393,7 @@ export function Setup({
               {tokens.data.map((t) => (
                 <tr key={t.id} style={{ opacity: t.revoked_at ? 0.45 : 1 }}>
                   <td>{t.name}</td>
-                  <td className="mono" style={{ fontSize: 11.5 }}>{t.prefix}…</td>
+                  <td className="mono" style={{ fontSize: 13 }}>{t.prefix}…</td>
                   <td>
                     {t.scopes.map((s) => (
                       <Badge key={s}>{s}</Badge>
@@ -433,9 +433,9 @@ export function Setup({
         <div className="card-body">
           <div className="grid-3">
             <div>
-              <div className="faint" style={{ fontSize: 12.5 }}>Understanding meaning</div>
+              <div className="faint" style={{ fontSize: 13.5 }}>Understanding meaning</div>
               <div style={{ fontWeight: 550, marginTop: 2 }}>{boot.embedder.label}</div>
-              <div className="faint" style={{ fontSize: 11.5, marginTop: 2 }}>
+              <div className="faint" style={{ fontSize: 13, marginTop: 2 }}>
                 {boot.embedder.semantic ? (
                   <Badge tone="ok">genuinely semantic</Badge>
                 ) : (
@@ -444,16 +444,16 @@ export function Setup({
               </div>
             </div>
             <div>
-              <div className="faint" style={{ fontSize: 12.5 }}>Where it&rsquo;s stored</div>
+              <div className="faint" style={{ fontSize: 13.5 }}>Where it&rsquo;s stored</div>
               <div style={{ fontWeight: 550, marginTop: 2 }}>CockroachDB · {boot.target}</div>
-              <div className="faint" style={{ fontSize: 11.5, marginTop: 2 }}>
+              <div className="faint" style={{ fontSize: 13, marginTop: 2 }}>
                 {boot.counts.memories} memories · {boot.counts.entities} entities
               </div>
             </div>
             <div>
-              <div className="faint" style={{ fontSize: 12.5 }}>Used so far</div>
+              <div className="faint" style={{ fontSize: 13.5 }}>Used so far</div>
               <div style={{ fontWeight: 550, marginTop: 2 }}>{boot.counts.calls} tool calls</div>
-              <div className="faint" style={{ fontSize: 11.5, marginTop: 2 }}>
+              <div className="faint" style={{ fontSize: 13, marginTop: 2 }}>
                 across {connected.length} client{connected.length === 1 ? '' : 's'}
               </div>
             </div>
@@ -461,11 +461,11 @@ export function Setup({
 
           {boot.embedder.rejected.length > 0 && (
             <div style={{ marginTop: 12 }}>
-              <div className="faint" style={{ fontSize: 11, marginBottom: 4 }}>
+              <div className="faint" style={{ fontSize: 13, marginBottom: 4 }}>
                 Also tried, and not available here
               </div>
               {boot.embedder.rejected.map((r) => (
-                <div key={r.id} className="faint" style={{ fontSize: 11.5 }}>
+                <div key={r.id} className="faint" style={{ fontSize: 13 }}>
                   <code className="mono">{r.id}</code> — {r.error}
                 </div>
               ))}

@@ -261,7 +261,7 @@ export function Graph({ workspace }: { workspace: string | null }) {
           </span>
         </div>
         <div className="spacer" />
-        <label className="row faint" style={{ gap: 5, fontSize: 12.5, cursor: 'pointer' }}>
+        <label className="row faint" style={{ gap: 5, fontSize: 13.5, cursor: 'pointer' }}>
           <input
             type="checkbox"
             checked={showMemories}
@@ -298,7 +298,7 @@ export function Graph({ workspace }: { workspace: string | null }) {
                 }}
               >
                 <div style={{ fontWeight: 600, fontSize: 13 }}>{hover.label}</div>
-                <div className="faint" style={{ fontSize: 11.5 }}>
+                <div className="faint" style={{ fontSize: 13 }}>
                   {hover.type === 'entity'
                     ? `${hover.kind} · mentioned ${hover.weight}×`
                     : `memory · ${hover.kind}`}
@@ -329,22 +329,22 @@ function EntityPanel({ id, name, onClose }: { id: string; name: string; onClose:
       </div>
       <div className="grid-2" style={{ padding: 14 }}>
         <div>
-          <div className="faint" style={{ fontSize: 11, marginBottom: 6 }}>MENTIONED IN</div>
+          <div className="faint" style={{ fontSize: 13, marginBottom: 6 }}>MENTIONED IN</div>
           {!d.data?.memories.length ? (
-            <div className="faint" style={{ fontSize: 12.5 }}>nothing yet</div>
+            <div className="faint" style={{ fontSize: 13.5 }}>nothing yet</div>
           ) : (
             d.data.memories.slice(0, 10).map((m: any) => (
               <div key={m.id} style={{ padding: '4px 0', fontSize: 13 }}>
                 {m.title}
-                <span className="faint" style={{ fontSize: 11, marginLeft: 6 }}>{m.kind}</span>
+                <span className="faint" style={{ fontSize: 13, marginLeft: 6 }}>{m.kind}</span>
               </div>
             ))
           )}
         </div>
         <div>
-          <div className="faint" style={{ fontSize: 11, marginBottom: 6 }}>APPEARS ALONGSIDE</div>
+          <div className="faint" style={{ fontSize: 13, marginBottom: 6 }}>APPEARS ALONGSIDE</div>
           {!d.data?.related.length ? (
-            <div className="faint" style={{ fontSize: 12.5 }}>nothing yet</div>
+            <div className="faint" style={{ fontSize: 13.5 }}>nothing yet</div>
           ) : (
             <div className="row wrap" style={{ gap: 5 }}>
               {d.data.related.map((r: any) => (

@@ -82,7 +82,7 @@ export function Empty({ icon, title, hint }: { icon?: string; title: string; hin
     <div className="empty">
       {icon && <div className="big">{icon}</div>}
       <div style={{ fontWeight: 550, color: 'var(--text-2)' }}>{title}</div>
-      {hint && <div style={{ marginTop: 4, fontSize: 12.5 }}>{hint}</div>}
+      {hint && <div style={{ marginTop: 4, fontSize: 13.5 }}>{hint}</div>}
     </div>
   );
 }
@@ -102,7 +102,7 @@ export function CodeBlock({ code, lang }: { code: string; lang?: string }) {
         {copied ? '✓ copied' : 'copy'}
       </button>
       {lang && (
-        <div style={{ color: 'var(--text-3)', fontSize: 10.5, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '.06em' }}>
+        <div style={{ color: 'var(--text-3)', fontSize: 13, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '.06em' }}>
           {lang}
         </div>
       )}

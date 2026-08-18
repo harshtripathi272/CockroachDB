@@ -75,8 +75,10 @@
   --shadow:    0 2px 10px rgba(69, 28, 34, .06), 0 1px 2px rgba(69, 28, 34, .04);
   --shadow-lg: 0 16px 40px rgba(69, 28, 34, .10), 0 2px 8px rgba(69, 28, 34, .05);
 
+  /* One typeface. Geist for everything, Geist Mono only for things that are
+     literally code or an id. Mixing a serif in for "your content" sounded
+     principled and just read as two fonts fighting. */
   --sans: 'Geist', ui-sans-serif, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  --serif: 'Iowan Old Style', 'Palatino Linotype', Palatino, Charter, Georgia, serif;
   --mono: 'Geist Mono', ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, monospace;
 
   --nav-w: 232px;
@@ -84,39 +86,41 @@
 }
 
 [data-theme='dark'] {
-  /* Dark is warm too — a cold slate dark theme would throw away the identity
-     the light one just built. */
-  --bg:            #17120f;
-  --surface:       #1f1915;
-  --surface-2:     #29211b;
-  --surface-3:     #342a22;
-  --border:        #342a22;
-  --border-strong: #4c3d31;
+  /* The first attempt pushed the warm hue all the way through the darks and
+     came out muddy — brown surfaces with red-brown text on them. Warmth in a
+     dark theme has to be a hint, not the whole story, so these are near-neutral
+     with only a trace of the paper hue, and the contrast steps are wider. */
+  --bg:            #191817;
+  --surface:       #211f1e;
+  --surface-2:     #2a2826;
+  --surface-3:     #343130;
+  --border:        #312e2c;
+  --border-strong: #4a4641;
 
-  --text:          #f7ede0;
-  --text-2:        #bda595;
-  --text-3:        #8a7263;
+  --text:          #f4efe8;
+  --text-2:        #b6ada2;
+  --text-3:        #8a8177;
 
-  --accent:        #a586fb;
-  --accent-hover:  #bda5fc;
-  --accent-soft:   #241a3d;
-  --accent-border: #43327a;
+  --accent:        #b7a0fc;
+  --accent-hover:  #cdbcfd;
+  --accent-soft:   #262041;
+  --accent-border: #463b73;
 
-  --clay:          #e79274;
-  --clay-soft:     #33201a;
+  --clay:          #e9987b;
+  --clay-soft:     #33231d;
 
-  --ok:            #a7cc75;
-  --ok-soft:       #1c2413;
-  --warn:          #e2b558;
-  --warn-soft:     #2b2211;
-  --danger:        #f7869f;
-  --danger-soft:   #2e1219;
-  --info:          #86bde0;
-  --info-soft:     #142430;
+  --ok:            #aed37c;
+  --ok-soft:       #1d2615;
+  --warn:          #e8bd63;
+  --warn-soft:     #2d2413;
+  --danger:        #fa8ba3;
+  --danger-soft:   #33141c;
+  --info:          #8fc6e8;
+  --info-soft:     #152632;
 
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .3);
-  --shadow:    0 2px 10px rgba(0, 0, 0, .35), 0 1px 2px rgba(0, 0, 0, .25);
-  --shadow-lg: 0 16px 40px rgba(0, 0, 0, .5), 0 2px 8px rgba(0, 0, 0, .3);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .4);
+  --shadow:    0 2px 10px rgba(0, 0, 0, .45), 0 1px 2px rgba(0, 0, 0, .3);
+  --shadow-lg: 0 16px 40px rgba(0, 0, 0, .6), 0 2px 8px rgba(0, 0, 0, .35);
 }
 
 * { box-sizing: border-box; }
@@ -529,12 +533,10 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; font-family: var
 
 /* ------------------------------------------------------------------- prose */
 
-/* Serif for the user's own content. It separates "your memory" from "the
-   application's chrome" without needing a box around it. */
+/* Reading text: the user's own memories, wiki bodies, explanations. */
 .prose {
-  font-family: var(--serif);
-  font-size: 15.5px;
-  line-height: 1.68;
+  font-size: 16px;
+  line-height: 1.7;
   color: var(--text);
   max-width: 68ch;
 }
@@ -1026,3 +1028,101 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; font-family: var
   .page-head .lede { font-size: 15px; }
   .page-head-row .ws-pick { margin-left: 0; }
 }
+
+/* --------------------------------------------------------------- projects */
+
+/* A project card is a single big target rather than a card with a link buried
+   in it. Nothing here is a nested control, so there is no ambiguity about what
+   clicking does. */
+.proj-card {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px 22px;
+  cursor: pointer;
+  transition: border-color .12s, transform .12s, box-shadow .12s;
+}
+.proj-card:hover {
+  border-color: var(--border-strong);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow);
+}
+.proj-card-top { display: flex; align-items: center; gap: 10px; margin-bottom: 9px; }
+.proj-card-top h3 { font-size: 19px; }
+.proj-desc {
+  color: var(--text-2);
+  font-size: 14.5px;
+  line-height: 1.55;
+  margin: 0 0 16px;
+  min-height: 2.2em;
+}
+.proj-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13.5px;
+  color: var(--text-2);
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
+.proj-dot { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; }
+.proj-dot.lg { width: 13px; height: 13px; margin-top: 11px; }
+
+.detail-bar { display: flex; align-items: center; gap: 10px; }
+.detail-head { display: flex; align-items: flex-start; gap: 13px; }
+.detail-head h2 { font-size: 29px; }
+
+/* Memories read as entries in a list, not rows in a spreadsheet — the body
+   text is the point and a table cell truncates it into uselessness. */
+.mem-list { display: flex; flex-direction: column; }
+.mem-row { padding: 16px 18px; border-top: 1px solid var(--border); }
+.mem-row:first-child { border-top: none; }
+.mem-row-head { display: flex; align-items: center; gap: 10px; margin-bottom: 5px; }
+.mem-row-head strong { font-weight: 500; font-size: 15.5px; }
+.mem-row-body {
+  color: var(--text-2);
+  font-size: 14.5px;
+  line-height: 1.6;
+  max-width: 72ch;
+}
+.mem-row-foot { font-size: 13px; margin-top: 7px; }
+
+.folder-list { display: flex; flex-direction: column; gap: 2px; }
+.folder-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 14.5px;
+}
+.folder-row:hover { background: var(--surface-2); }
+
+/* ----------------------------------------------------------------- modal */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(30, 16, 12, .34);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: 60;
+  animation: fade .12s ease-out;
+}
+.modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: 26px 28px;
+  width: 100%;
+  max-width: 460px;
+}
+@keyframes fade { from { opacity: 0 } to { opacity: 1 } }
