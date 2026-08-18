@@ -243,6 +243,17 @@ export default function App() {
             </div>
           )}
 
+          {boot.data?.readOnly && (
+            <div className="banner">
+              <span className="dot" />
+              <div className="body">
+                <strong>You’re looking at the public demo.</strong> Browse everything —
+                the memories here are real. Saving and editing are switched off for
+                visitors; a connected tool with an API token can still write.
+              </div>
+            </div>
+          )}
+
           {boot.data && !boot.data.embedder.semantic && (
             <div className="banner warn">
               <span className="dot" />

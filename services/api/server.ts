@@ -47,16 +47,30 @@ export const orbis = new Orbis({
 export const choice = await orbis.ready();
 
 /**
- * A development account so the console is usable without a login flow.
+ * Who gets in without a token. Three answers, because there are three
+ * situations and conflating any two of them was the security hole this
+ * replaces:
  *
- * Deliberately gated on ORBIS_DEV: it bypasses token auth entirely, which is
- * correct for a local cluster on a laptop and would be a severe hole anywhere
- * else. Production requires a real bearer token on every request.
+ *   ORBIS_DEV     A laptop. No token, full access. Correct for a local cluster
+ *                 and a severe hole anywhere else — which is exactly what
+ *                 shipping ORBIS_DEV=1 to Lambda was. An unauthenticated POST
+ *                 to the live demo returned 201.
+ *
+ *   ORBIS_DEMO    A public demo. Anyone may look at everything; nobody may
+ *                 change anything without a bearer token. This is what the
+ *                 deployed function runs, so a judge can browse every page
+ *                 while the write paths stay closed.
+ *
+ *   neither       Production proper. Token on every request, no third path.
+ *
+ * DEV wins if both are set, because a machine that claims to be a laptop and
+ * a demo at once is a laptop with a copy-pasted env file.
  */
-const DEV = process.env.ORBIS_DEV !== '0';
+const DEV = process.env.ORBIS_DEV !== '0' && process.env.ORBIS_DEMO !== '1';
+const DEMO = !DEV && process.env.ORBIS_DEMO === '1';
 let devAccountId: string | null = null;
 
-if (DEV) {
+if (DEV || DEMO) {
   const row = await orbis.db.one(
     `INSERT INTO account (email, display_name) VALUES ($1,$2)
      ON CONFLICT (email) DO UPDATE SET display_name = excluded.display_name
@@ -208,12 +222,29 @@ async function restApi(req: IncomingMessage, res: ServerResponse, url: URL): Pro
 // ---------------------------------------------------------------------------
 
 async function consoleApi(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
-  const accountId = await consoleAccount(req);
-  if (!accountId) return json(res, 401, { error: 'not authenticated' });
+  const who = await consoleAccount(req);
+  if (!who) return json(res, 401, { error: 'not authenticated' });
+  const { accountId, canWrite } = who;
 
   const session = orbis.session(accountId);
   const route = url.pathname.replace('/api/console', '');
   const q = url.searchParams;
+
+  // The read-only gate, in exactly one place.
+  //
+  // Method-based rather than route-based, because a new POST route added next
+  // month must be born closed, not remembered into the list. The one exception
+  // is /cloud/call: a POST in shape, but every tool it can name is on the
+  // read-only allowlist in services/cloud/cockroach.ts, and watching Orbis ask
+  // the cluster about itself is half the demo.
+  if (!canWrite && req.method !== 'GET' && route !== '/cloud/call') {
+    return json(res, 403, {
+      error:
+        'This is the public demo, which anyone can read and nobody can change. ' +
+        'Connect with an API token to write.',
+      readOnly: true,
+    });
+  }
 
   // ------------------------------------------------------------- bootstrap
   if (route === '/bootstrap') {
@@ -259,6 +290,7 @@ async function consoleApi(req: IncomingMessage, res: ServerResponse, url: URL): 
       cloud: cloudConfig(),
       target: TARGET,
       dev: DEV,
+      readOnly: !canWrite,
     });
   }
 
@@ -876,19 +908,22 @@ async function crdbSnapshot(accountId: string) {
 // ---------------------------------------------------------------------------
 
 /**
- * Which account the console is acting as.
+ * Which account the console is acting as, and whether it may write.
  *
- * A bearer token if one is presented, otherwise the development account when
- * ORBIS_DEV is on. With dev off and no token, unauthenticated — there is no
- * third path.
+ * A bearer token always wins and always writes. Without one: full access on a
+ * dev machine, read-only in demo mode, unauthenticated otherwise.
  */
-async function consoleAccount(req: IncomingMessage): Promise<string | null> {
+async function consoleAccount(
+  req: IncomingMessage,
+): Promise<{ accountId: string; canWrite: boolean } | null> {
   const header = req.headers.authorization;
   if (header?.startsWith('Bearer ')) {
     const identity = await orbis.tokens.resolve(header.slice(7).trim());
-    if (identity) return identity.accountId;
+    if (identity) return { accountId: identity.accountId, canWrite: true };
   }
-  return DEV ? devAccountId : null;
+  if (DEV && devAccountId) return { accountId: devAccountId, canWrite: true };
+  if (DEMO && devAccountId) return { accountId: devAccountId, canWrite: false };
+  return null;
 }
 
 const MIME: Record<string, string> = {

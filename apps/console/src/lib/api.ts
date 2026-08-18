@@ -122,6 +122,8 @@ export interface Bootstrap {
   };
   target: string;
   dev: boolean;
+  /** True on the public demo without a token: every page reads, nothing writes. */
+  readOnly: boolean;
 }
 
 export interface ApiToken {

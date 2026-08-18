@@ -332,9 +332,13 @@ if ($useS3) {
 # selection probes bedrock, then the bundled on-device model, then lexical, so
 # Bedrock becomes an upgrade that applies itself the moment the account is
 # unblocked.
+# ORBIS_DEMO, not ORBIS_DEV. Dev mode on a public URL meant anyone could POST
+# a memory with no token at all — verified, embarrassingly, with curl. Demo
+# mode keeps every page browsable while writes require a bearer token.
 $envVars = @{
   ORBIS_TARGET        = "cloud"
-  ORBIS_DEV           = "1"
+  ORBIS_DEV           = "0"
+  ORBIS_DEMO          = "1"
   BEDROCK_EMBED_MODEL = "amazon.titan-embed-text-v2:0"
   ORBIS_MODEL_DIR     = "/var/task/models"
   ORBIS_MODEL_DTYPE   = "q8"

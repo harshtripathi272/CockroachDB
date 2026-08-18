@@ -286,27 +286,47 @@ describe('the vector index', () => {
     await orbis.db.query('ANALYZE memory');
   });
 
+  /**
+   * EXPLAIN, retried while the optimizer catches up.
+   *
+   * On CockroachDB Cloud the statistics written by ANALYZE take a few seconds
+   * to reach the gateway's stats cache. Until they do, the optimizer estimates
+   * this account at zero rows and correctly plans a scan — reading nothing is
+   * cheaper than descending anything. That is stale statistics, not a broken
+   * index, so the test re-ANALYZEs and re-plans for up to ~20s before judging.
+   * Against the local cluster the first attempt passes and the loop is free.
+   */
+  async function planSettling(sql: string, params: unknown[]): Promise<string> {
+    let text = '';
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const plan = await orbis.db.query(sql, params);
+      text = plan.map((r) => String(Object.values(r)[0])).join('\n');
+      if (/vector search/i.test(text)) return text;
+      await new Promise((r) => setTimeout(r, 2000));
+      await orbis.db.query('ANALYZE memory');
+    }
+    return text;
+  }
+
   test('is chosen for a workspace-scoped search', async () => {
     const [vec] = await orbis.embedder.embed(['a representative query']);
-    const plan = await orbis.db.query(
+    const text = await planSettling(
       `EXPLAIN SELECT m.id FROM memory m
         WHERE m.account_id = $2 AND m.status = 'active' AND m.workspace_id = $3
         ORDER BY m.embedding <=> $1::VECTOR LIMIT 10`,
       [`[${vec.join(',')}]`, accountId, workspaceId],
     );
-    const text = plan.map((r) => String(Object.values(r)[0])).join('\n');
     assert.match(text, /vector search/i, `expected a vector search in:\n${text}`);
   });
 
   test('is chosen for a global search too', async () => {
     const [vec] = await orbis.embedder.embed(['a representative query']);
-    const plan = await orbis.db.query(
+    const text = await planSettling(
       `EXPLAIN SELECT m.id FROM memory m
         WHERE m.account_id = $2 AND m.status = 'active'
         ORDER BY m.embedding <=> $1::VECTOR LIMIT 10`,
       [`[${vec.join(',')}]`, accountId],
     );
-    const text = plan.map((r) => String(Object.values(r)[0])).join('\n');
     assert.match(text, /vector search/i, `expected a vector search in:\n${text}`);
   });
 

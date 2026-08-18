@@ -51,8 +51,15 @@ export const CLOUD_MCP_URL = 'https://cockroachlabs.cloud/mcp';
  * Every one is read-only. `select_query` reads user data and is included
  * because schema-aware questions are the point of the integration; it is also
  * the one to remove first if that trade ever stops looking right.
+ *
+ * `list_clusters` is here for diagnosis as much as for use. A service account
+ * authenticates fine with no role on any cluster, and every other tool then
+ * fails with "cluster not found" — which reads like a wrong id and is actually
+ * a missing role grant. Asking what the account can see turns that into a
+ * sentence somebody can act on.
  */
 export const ALLOWED_TOOLS = [
+  'list_clusters',
   'get_cluster',
   'list_cluster_nodes',
   'list_databases',
@@ -86,6 +93,16 @@ export interface CloudStatus extends CloudConfig {
   tools: RemoteTool[];
   /** The subset Orbis is willing to call. */
   allowed: string[];
+  /**
+   * Clusters this service account can actually see, as names.
+   *
+   * `null` when the question was not asked or could not be answered. An empty
+   * array is the interesting case and is not the same as null: it means the key
+   * is valid and the account has been granted nothing.
+   */
+  clusters: string[] | null;
+  /** Does `clusters` contain the cluster this deployment is pinned to? */
+  clusterVisible: boolean | null;
   error: string | null;
   /** How to fix it, when there is something to fix. */
   hint: string | null;
@@ -177,6 +194,8 @@ export async function cloudStatus(force = false): Promise<CloudStatus> {
     protocolVersion: null,
     tools: [],
     allowed: [],
+    clusters: null,
+    clusterVisible: null,
     error: null,
     hint: null,
     checkedAt: new Date().toISOString(),
@@ -202,6 +221,11 @@ export async function cloudStatus(force = false): Promise<CloudStatus> {
       .map((t) => t.name)
       .filter((n) => (ALLOWED_TOOLS as readonly string[]).includes(n));
 
+    // A handshake proves the key is real. It does not prove the service
+    // account has been granted anything, and those are different problems with
+    // different fixes, so ask before reporting success.
+    const { clusters, clusterVisible } = await visibleClusters(client, cfg.clusterId);
+
     const value: CloudStatus = {
       ...base,
       reachable: true,
@@ -209,10 +233,9 @@ export async function cloudStatus(force = false): Promise<CloudStatus> {
       protocolVersion: hand.protocolVersion,
       tools,
       allowed,
-      hint: allowed.length
-        ? null
-        : 'Connected, but the service account can see none of the read-only tools ' +
-          'Orbis uses. Check that it holds the Cluster Operator or Cluster Admin role.',
+      clusters,
+      clusterVisible,
+      hint: describeReach(allowed.length, clusters, clusterVisible, cfg.clusterId),
     };
     cached = { at: Date.now(), ttl: OK_TTL_MS, value };
     return value;
@@ -223,6 +246,71 @@ export async function cloudStatus(force = false): Promise<CloudStatus> {
   } finally {
     void client.close().catch(() => {});
   }
+}
+
+/**
+ * Ask the server which clusters this key can reach.
+ *
+ * Deliberately non-fatal: if `list_clusters` is unavailable or errors, the
+ * connection is still good and the answer is simply unknown, which the `null`
+ * says. A diagnostic that can take down the thing it diagnoses is worse than no
+ * diagnostic.
+ */
+async function visibleClusters(
+  client: McpClient,
+  pinned: string | null,
+): Promise<{ clusters: string[] | null; clusterVisible: boolean | null }> {
+  try {
+    const r = await client.callTool('list_clusters', {});
+    const rows = (r.structured?.rows ?? JSON.parse(r.text || '{}').rows) as
+      | Array<Record<string, unknown>>
+      | undefined;
+    if (!Array.isArray(rows)) return { clusters: null, clusterVisible: null };
+
+    const names = rows.map((row) =>
+      String(row.name ?? row.cluster_name ?? row.id ?? 'unnamed'),
+    );
+    const ids = rows.map((row) => String(row.id ?? row.cluster_id ?? ''));
+    return {
+      clusters: names,
+      clusterVisible: pinned ? ids.includes(pinned) : names.length > 0,
+    };
+  } catch {
+    return { clusters: null, clusterVisible: null };
+  }
+}
+
+/** The one sentence worth showing, given what the probe found. */
+function describeReach(
+  allowedCount: number,
+  clusters: string[] | null,
+  clusterVisible: boolean | null,
+  pinned: string | null,
+): string | null {
+  if (clusters !== null && clusters.length === 0) {
+    return (
+      'The key is valid and the handshake succeeded, but this service account can ' +
+      'see no clusters, so every tool call will fail with "cluster not found". In ' +
+      'the Cloud Console: Access Management → Service Accounts → this account → ' +
+      'Assign roles → Cluster Operator on your cluster (or Cluster Admin at the ' +
+      'organisation level). Nothing else needs changing.'
+    );
+  }
+  if (pinned && clusterVisible === false) {
+    return (
+      `Connected, but cluster ${pinned} is not one this service account can see` +
+      (clusters?.length ? ` — it can see: ${clusters.join(', ')}. ` : '. ') +
+      'Either CRDB_CLUSTER_ID is the wrong id, or the role was granted on a ' +
+      'different cluster.'
+    );
+  }
+  if (!allowedCount) {
+    return (
+      'Connected, but the service account can see none of the read-only tools ' +
+      'Orbis uses. Check that it holds the Cluster Operator or Cluster Admin role.'
+    );
+  }
+  return null;
 }
 
 function describeFailure(err: unknown): { error: string; hint: string | null } {
