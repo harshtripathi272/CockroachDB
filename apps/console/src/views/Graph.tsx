@@ -156,9 +156,16 @@ export function Graph({ workspace }: { workspace: string | null }) {
 
       // ---- draw
       const css = getComputedStyle(document.documentElement);
-      const border = css.getPropertyValue('--border-strong').trim() || '#ccc';
       const text = css.getPropertyValue('--text').trim() || '#111';
       const faint = css.getPropertyValue('--text-3').trim() || '#999';
+      // Edges were drawn in --border-strong at 28% alpha. That is a colour
+      // chosen to be *barely* visible as a 1px divider, so at a third opacity
+      // on a 0.8px line it disappeared completely — in both themes. The graph
+      // is the connections, so they get a mid-grey that has contrast against
+      // either ground, and enough weight to actually be seen.
+      const edge = faint;
+      const lineage = css.getPropertyValue('--accent').trim() || '#0072f5';
+      const danger = css.getPropertyValue('--danger').trim() || '#c00';
 
       ctx.clearRect(0, 0, rect.width, rect.height);
 
@@ -167,9 +174,9 @@ export function Graph({ workspace }: { workspace: string | null }) {
         const b = byId.get(e.dstId);
         if (!a || !b) continue;
         const isLineage = e.rel === 'derives';
-        ctx.strokeStyle = isLineage ? '#b45309' : border;
-        ctx.globalAlpha = isLineage ? 0.5 : 0.28;
-        ctx.lineWidth = isLineage ? 1.4 : 0.8;
+        ctx.strokeStyle = isLineage ? lineage : edge;
+        ctx.globalAlpha = isLineage ? 0.85 : 0.55;
+        ctx.lineWidth = isLineage ? 1.8 : 1.2;
         if (isLineage) ctx.setLineDash([3, 3]); else ctx.setLineDash([]);
         ctx.beginPath();
         ctx.moveTo(a.x, a.y);
@@ -189,9 +196,9 @@ export function Graph({ workspace }: { workspace: string | null }) {
         if (isEntity) {
           ctx.fillStyle = ENTITY_COLORS[n.kind] ?? '#6b6558';
         } else {
-          ctx.fillStyle = n.status === 'retracted' ? '#9f1239' : faint;
+          ctx.fillStyle = n.status === 'retracted' ? danger : faint;
         }
-        ctx.globalAlpha = isEntity ? 0.9 : 0.55;
+        ctx.globalAlpha = isEntity ? 1 : 0.75;
         ctx.fill();
         ctx.globalAlpha = 1;
 
@@ -204,7 +211,7 @@ export function Graph({ workspace }: { workspace: string | null }) {
         // Labels only where they will not turn the picture into noise.
         if (isEntity && (n.weight > 2 || active || nodes.length < 45)) {
           ctx.fillStyle = active ? text : faint;
-          ctx.font = `${active ? '600 ' : ''}11px ui-sans-serif, system-ui, sans-serif`;
+          ctx.font = `${active ? '550 ' : '400 '}12px Geist, ui-sans-serif, system-ui, sans-serif`;
           ctx.textAlign = 'center';
           const label = n.label.length > 22 ? `${n.label.slice(0, 21)}…` : n.label;
           ctx.fillText(label, n.x, n.y - r - 5);

@@ -11,6 +11,7 @@ import { Workspaces } from './views/Workspaces.tsx';
 import { Graph } from './views/Graph.tsx';
 import { Observability } from './views/Observability.tsx';
 import { Chat } from './views/Chat.tsx';
+import { Welcome, useWelcome } from './views/Welcome.tsx';
 
 type ViewId =
   | 'setup' | 'chat' | 'profile' | 'train' | 'memories'
@@ -95,6 +96,7 @@ export default function App() {
   );
 
   const toasts = useToasts();
+  const welcome = useWelcome();
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -184,6 +186,10 @@ export default function App() {
         </div>
 
         <div className="nav-foot">
+          <button className="nav-item" onClick={welcome.reopen}>
+            <Icon name="question" />
+            <span>what is this?</span>
+          </button>
           <button
             className="nav-item"
             onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
@@ -196,7 +202,7 @@ export default function App() {
 
       <main className="main">
         <div className={`content${view === 'graph' || view === 'observability' || view === 'chat' ? ' wide' : ''}`}>
-          <div className="page-head">
+          <div className="page-head" hidden={boot.data ? !welcome.seen : false}>
             <div className="page-head-row">
               <h1>{current.label}</h1>
               {boot.data && boot.data.workspaces.length > 0 && (
@@ -243,7 +249,11 @@ export default function App() {
             </div>
           )}
 
-          {boot.data && (
+          {boot.data && !welcome.seen && (
+            <Welcome onDone={() => { welcome.dismiss(); setView('setup'); }} />
+          )}
+
+          {boot.data && welcome.seen && (
             <>
               {view === 'setup' && (
                 <Setup boot={boot.data} reload={boot.reload} toast={toasts.push} />
