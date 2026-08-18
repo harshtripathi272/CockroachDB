@@ -9,7 +9,7 @@ endpoint backed by CockroachDB.
 **Live demo:** https://afctmu6tki.execute-api.ap-south-1.amazonaws.com
 **The story:** [BLOG.md](BLOG.md)
 
-Built for the [CockroachDB × AWS Hackathon — Build with Agentic Memory](https://cockroachdb-ai.devpost.com/).
+
 
 ---
 
