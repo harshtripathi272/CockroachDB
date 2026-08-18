@@ -866,3 +866,125 @@ tbody tr.clickable:hover { background: var(--surface-2); }
   .welcome-hero h2 { font-size: 27px; }
   .tab-map-row { padding: 14px 16px; }
 }
+
+/* -------------------------------------------------------------- wiki page */
+
+/* An article, not a dashboard. Body column capped for reading, reference
+   material parked in a sticky rail beside it. */
+.wiki {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 268px;
+  gap: 48px;
+  align-items: start;
+}
+
+.wiki-body { min-width: 0; max-width: 70ch; }
+.wiki-body.sub { max-width: 70ch; padding-top: 12px; border-top: 1px solid var(--border); }
+
+.wiki-head { border-bottom: 1px solid var(--border); padding-bottom: 18px; margin-bottom: 22px; }
+.wiki-head h1 { font-size: 38px; letter-spacing: -0.034em; margin-bottom: 10px; }
+.wiki-meta { font-size: 14px; color: var(--text-3); }
+.wiki-meta strong { color: var(--text-2); font-weight: 500; }
+
+/* The lead: one paragraph that has to make sense on its own. */
+.wiki-lead {
+  font-size: 19px;
+  line-height: 1.62;
+  color: var(--text);
+  margin: 0 0 26px;
+}
+
+.wiki-prose h2 {
+  font-size: 22px;
+  margin: 2em 0 .6em;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+  scroll-margin-top: 24px;
+}
+.wiki-prose h3 { font-size: 17.5px; margin: 1.6em 0 .4em; scroll-margin-top: 24px; }
+.wiki-prose { color: var(--text); }
+.wiki-prose blockquote {
+  margin: 1.2em 0;
+  padding: 2px 0 2px 18px;
+  border-left: 2px solid var(--border-strong);
+  color: var(--text-2);
+}
+
+.wiki-refs { margin-top: 48px; border-top: 1px solid var(--border); padding-top: 26px; }
+.wiki-refs h2 { font-size: 21px; margin-bottom: 6px; scroll-margin-top: 24px; }
+.ref-list { padding-left: 1.4em; margin: 16px 0 0; }
+.ref-list li { margin-bottom: 9px; font-size: 14.5px; display: flex; gap: 8px; align-items: baseline; }
+.ref-link {
+  border: none; background: none; padding: 0; font: inherit;
+  font-size: 14.5px; color: var(--accent); cursor: pointer; text-align: left;
+}
+.ref-link:hover { text-decoration: underline; }
+
+.wiki-side { position: sticky; top: 28px; display: flex; flex-direction: column; gap: 20px; }
+
+.infobox {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.infobox-head {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  font-size: 14px; font-weight: 500;
+}
+.infobox dl { margin: 0; padding: 6px 16px 12px; }
+.infobox dl > div {
+  display: flex; justify-content: space-between; gap: 12px;
+  padding: 7px 0; border-bottom: 1px solid var(--border);
+  font-size: 14px;
+}
+.infobox dl > div:last-child { border-bottom: none; }
+.infobox dt { color: var(--text-3); margin: 0; }
+.infobox dd { margin: 0; font-weight: 500; font-variant-numeric: tabular-nums; }
+.infobox-foot { padding: 10px 16px; border-top: 1px solid var(--border); font-size: 13px; color: var(--text-3); }
+
+.toc { border-left: 2px solid var(--border); padding-left: 16px; }
+.toc-head { font-size: 13.5px; color: var(--text-3); margin-bottom: 10px; }
+.toc ol { list-style: none; margin: 0; padding: 0; }
+.toc li { margin-bottom: 8px; }
+.toc a {
+  display: flex; gap: 9px; align-items: baseline;
+  font-size: 14.5px; color: var(--text-2); text-decoration: none; line-height: 1.45;
+}
+.toc a:hover { color: var(--text); text-decoration: none; }
+.toc-n { color: var(--text-3); font-variant-numeric: tabular-nums; font-size: 13px; }
+
+@media (max-width: 1000px) {
+  .wiki { grid-template-columns: 1fr; gap: 28px; }
+  /* The rail moves above the article rather than sticking to a column that
+     no longer exists. */
+  .wiki-side { position: static; order: -1; flex-direction: row; flex-wrap: wrap; }
+  .infobox { flex: 1 1 260px; }
+  .toc { flex: 1 1 220px; }
+}
+@media (max-width: 640px) {
+  .wiki-head h1 { font-size: 28px; }
+  .wiki-lead { font-size: 17px; }
+  .wiki-side { flex-direction: column; }
+}
+
+/* ---------------------------------------------------------------- settings */
+
+.set-list { display: flex; flex-direction: column; }
+.set-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 28px;
+  padding: 22px;
+  border-bottom: 1px solid var(--border);
+  align-items: start;
+}
+.set-row:last-child { border-bottom: none; }
+.set-info strong { font-weight: 500; font-size: 15.5px; }
+.set-info .faint { font-size: 14.5px; line-height: 1.55; max-width: 60ch; }
+.set-action { display: flex; flex-direction: column; gap: 10px; }
+
+@media (max-width: 860px) {
+  .set-row { grid-template-columns: 1fr; gap: 14px; }
+}

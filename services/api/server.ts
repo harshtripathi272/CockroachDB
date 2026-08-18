@@ -12,7 +12,7 @@ import { loadEnv, resolveConnectionString } from '../../scripts/env.mjs';
 import { runAgent } from '../agent/loop.ts';
 import { selectChatProviders, allModels } from '../agent/providers.ts';
 import type { Turn } from '../agent/providers.ts';
-import { cloudConfig, cloudStatus, cloudCall, ALLOWED_TOOLS } from '../cloud/cockroach.ts';
+import { cloudConfig, cloudStatus, cloudCall, ALLOWED_TOOLS, invalidateCloudStatus } from '../cloud/cockroach.ts';
 
 /**
  * The Orbis server.
@@ -70,6 +70,15 @@ if (DEV) {
      ON CONFLICT (account_id, slug) DO NOTHING`,
     [devAccountId],
   );
+}
+
+// A key saved through the console has to survive a cold start, so it is read
+// back out of the database before the first request is served.
+if (devAccountId) {
+  try {
+    const row = await orbis.db.one(`SELECT traits FROM account WHERE id = $1`, [devAccountId]);
+    applySettings(((row?.traits ?? {}).settings ?? {}) as OrbisSettings);
+  } catch { /* settings are optional; never block boot on them */ }
 }
 
 const mcp = createMcpHandler({
@@ -619,6 +628,64 @@ async function consoleApi(req: IncomingMessage, res: ServerResponse, url: URL): 
     return json(res, 200, { entries: rows });
   }
 
+  // ------------------------------------------------------------- settings
+  //
+  // Keys are held in `account.traits.settings` rather than only in the
+  // environment, because the whole point is that a person can paste one into
+  // the UI and have the feature start working. They are applied to
+  // `process.env` on write and on cold start, so provider selection — which
+  // probes the environment — needs no special case for "came from the DB".
+  //
+  // Values are never sent back. The UI gets a boolean and the last four
+  // characters, which is enough to answer "is one set, and is it the one I
+  // think" without the page being a place secrets can be read from.
+  if (route === '/settings' && req.method === 'GET') {
+    const st = await loadSettings(accountId);
+    return json(res, 200, {
+      settings: {
+        anthropicKey: describeKey(st.anthropicKey ?? process.env.ANTHROPIC_API_KEY),
+        openaiKey: describeKey(st.openaiKey ?? process.env.OPENAI_API_KEY),
+        crdbCloudKey: describeKey(st.crdbCloudKey ?? process.env.CRDB_CLOUD_API_KEY),
+        decayEnabled: st.decayEnabled === true,
+      },
+      chat: {
+        models: allModels(),
+        defaultModel: selectChatProviders().defaultModel,
+        reason: selectChatProviders().reason,
+        generative: selectChatProviders().providers.some((p) => p.generative),
+      },
+    });
+  }
+
+  if (route === '/settings' && req.method === 'POST') {
+    const b = await body(req);
+    const patch: Record<string, unknown> = {};
+    for (const k of ['anthropicKey', 'openaiKey', 'crdbCloudKey'] as const) {
+      if (typeof b[k] === 'string') patch[k] = b[k].trim() || null;
+    }
+    if (typeof b.decayEnabled === 'boolean') patch.decayEnabled = b.decayEnabled;
+
+    const saved = await saveSettings(accountId, patch);
+    applySettings(saved);
+    invalidateCloudStatus();
+
+    return json(res, 200, {
+      ok: true,
+      settings: {
+        anthropicKey: describeKey(saved.anthropicKey),
+        openaiKey: describeKey(saved.openaiKey),
+        crdbCloudKey: describeKey(saved.crdbCloudKey),
+        decayEnabled: saved.decayEnabled === true,
+      },
+      chat: {
+        models: allModels(),
+        defaultModel: selectChatProviders().defaultModel,
+        reason: selectChatProviders().reason,
+        generative: selectChatProviders().providers.some((p) => p.generative),
+      },
+    });
+  }
+
   // ------------------------------------------------------- CockroachDB view
   if (route === '/crdb') return json(res, 200, await crdbSnapshot(accountId));
 
@@ -699,6 +766,60 @@ async function consoleApi(req: IncomingMessage, res: ServerResponse, url: URL): 
   }
 
   return json(res, 404, { error: `no such route: ${route}` });
+}
+
+
+// ---------------------------------------------------------------------------
+// Settings
+// ---------------------------------------------------------------------------
+
+export interface OrbisSettings {
+  anthropicKey?: string | null;
+  openaiKey?: string | null;
+  crdbCloudKey?: string | null;
+  decayEnabled?: boolean;
+}
+
+/** "sk-ant-…a1b2", or null. Never the key. */
+function describeKey(v: string | null | undefined): { set: boolean; hint: string | null } {
+  const k = (v ?? '').trim();
+  return k ? { set: true, hint: `…${k.slice(-4)}` } : { set: false, hint: null };
+}
+
+async function loadSettings(accountId: string): Promise<OrbisSettings> {
+  const row = await orbis.db.one(`SELECT traits FROM account WHERE id = $1`, [accountId]);
+  return ((row?.traits ?? {}).settings ?? {}) as OrbisSettings;
+}
+
+async function saveSettings(accountId: string, patch: Record<string, unknown>): Promise<OrbisSettings> {
+  const current = await loadSettings(accountId);
+  const next = { ...current, ...patch };
+  for (const k of Object.keys(next)) {
+    if ((next as any)[k] === null) delete (next as any)[k];
+  }
+  await orbis.db.query(
+    `UPDATE account
+        SET traits = jsonb_set(COALESCE(traits, '{}'::JSONB), '{settings}', $2::JSONB, true)
+      WHERE id = $1`,
+    [accountId, JSON.stringify(next)],
+  );
+  return next;
+}
+
+/**
+ * Push stored keys into the environment.
+ *
+ * Provider selection reads `process.env`, and it does so on every call rather
+ * than once at import, so a key saved in the UI takes effect on the next chat
+ * turn with no restart. An environment variable set at deploy time always wins:
+ * an operator's configuration should not be silently overridden by something
+ * typed into a form.
+ */
+export function applySettings(st: OrbisSettings): void {
+  if (st.anthropicKey && !process.env.ANTHROPIC_API_KEY_FIXED) process.env.ANTHROPIC_API_KEY = st.anthropicKey;
+  if (st.openaiKey && !process.env.OPENAI_API_KEY_FIXED) process.env.OPENAI_API_KEY = st.openaiKey;
+  if (st.crdbCloudKey && !process.env.CRDB_CLOUD_API_KEY_FIXED) process.env.CRDB_CLOUD_API_KEY = st.crdbCloudKey;
+  if (st.decayEnabled !== undefined) process.env.ORBIS_DECAY = st.decayEnabled ? '1' : '0';
 }
 
 /**

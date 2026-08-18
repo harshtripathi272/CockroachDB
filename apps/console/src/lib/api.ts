@@ -243,6 +243,16 @@ export interface CloudCallResult {
   latencyMs: number;
 }
 
+export interface SettingsPayload {
+  settings: {
+    anthropicKey: { set: boolean; hint: string | null };
+    openaiKey: { set: boolean; hint: string | null };
+    crdbCloudKey: { set: boolean; hint: string | null };
+    decayEnabled: boolean;
+  };
+  chat: { models: ChatModelInfo[]; defaultModel: string; reason: string; generative: boolean };
+}
+
 const BASE = '/api/console';
 
 export class ApiError extends Error {
@@ -387,6 +397,13 @@ export const api = {
   crdb: () => req<any>('/crdb'),
 
   plans: (q?: string) => req<{ plans: Record<string, string> }>(`/plans${qs({ q })}`),
+
+  settings: () => req<SettingsPayload>('/settings'),
+
+  saveSettings: (patch: Record<string, string | boolean>) =>
+    req<SettingsPayload & { ok: boolean }>('/settings', {
+      method: 'POST', body: JSON.stringify(patch),
+    }),
 
   cloud: (force = false) => req<CloudStatus>(`/cloud${qs({ force: force ? 1 : null })}`),
 

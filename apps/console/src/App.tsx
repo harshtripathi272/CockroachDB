@@ -12,10 +12,11 @@ import { Graph } from './views/Graph.tsx';
 import { Observability } from './views/Observability.tsx';
 import { Chat } from './views/Chat.tsx';
 import { Welcome, useWelcome } from './views/Welcome.tsx';
+import { Settings } from './views/Settings.tsx';
 
 type ViewId =
   | 'setup' | 'chat' | 'profile' | 'train' | 'memories'
-  | 'workspaces' | 'graph' | 'observability';
+  | 'workspaces' | 'graph' | 'observability' | 'settings';
 
 /**
  * The navigation, and the one sentence each page opens with.
@@ -71,6 +72,11 @@ const VIEWS: Array<{
     id: 'graph', label: 'connections', icon: 'nodes', group: 'your memory',
     lede: <>The people, tools and projects that keep coming up in your memories, and
       what each one is linked to.</>,
+  },
+  {
+    id: 'settings', label: 'settings', icon: 'sliders', group: 'behind the scenes',
+    lede: <>Paste an API key to unlock the parts that need one. Everything else works
+      without them, so this page is optional.</>,
   },
   {
     id: 'observability', label: 'activity', icon: 'pulse', group: 'behind the scenes',
@@ -279,6 +285,7 @@ export default function App() {
               )}
               {view === 'graph' && <Graph workspace={workspace} />}
               {view === 'observability' && <Observability boot={boot.data} />}
+              {view === 'settings' && <Settings toast={toasts.push} />}
             </>
           )}
 

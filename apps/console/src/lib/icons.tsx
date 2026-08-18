@@ -76,6 +76,15 @@ const PATHS: Record<string, React.ReactNode> = {
       <path d="M1.8 8h2.9l1.6-4 2.6 8 1.7-4h3.6" />
     </>
   ),
+  // settings — sliders, not a cog; a cog reads as "system config" and this is
+  // mostly "paste a key".
+  sliders: (
+    <>
+      <path d="M2.4 5.2h5M10.6 5.2h3M2.4 10.8h3M8.6 10.8h5" />
+      <circle cx="8.8" cy="5.2" r="1.7" />
+      <circle cx="6.8" cy="10.8" r="1.7" />
+    </>
+  ),
   sun: (
     <>
       <circle cx="8" cy="8" r="3" />

@@ -1,17 +1,21 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { api } from '../lib/api.ts';
 import type { Bootstrap, Memory, WikiPage } from '../lib/api.ts';
-import {
-  Badge, Confidence, Drawer, Empty, Markdown, relTime, useAsync,
-} from '../lib/ui.tsx';
+import { Badge, Drawer, Empty, Markdown, relTime, useAsync } from '../lib/ui.tsx';
 
 /**
- * Profile — what Orbis knows about you.
+ * About you — laid out as a wiki article.
  *
- * The page is generated, and every claim on it is traceable to the raw
- * memories it came from. That is the point: a summariser produces something you
- * have to trust, whereas this produces something you can check. Clicking a
- * source opens the memory that supports it.
+ * The content was always here; it was presented as a stack of dashboard cards,
+ * which is the wrong shape for something you read top to bottom. An encyclopedia
+ * article is the right reference: a lead paragraph that stands alone, a
+ * contents list you can jump from, sections with real headings, an infobox of
+ * facts at a glance, and citations under every claim.
+ *
+ * The citation part is not decoration. This page is generated, and a generated
+ * profile you cannot check is just something to trust. Every line here traces
+ * back to a memory you can open, which is the difference between a summary and
+ * a reference.
  */
 export function Profile({
   boot,
@@ -32,163 +36,149 @@ export function Profile({
   const profile = pages.data?.find((p) => p.kind === 'profile');
   const others = pages.data?.filter((p) => p.kind !== 'profile') ?? [];
 
+  // Headings become the contents list. Parsed from the markdown rather than
+  // stored, so the two can never drift apart.
+  const toc = useMemo(() => {
+    if (!profile?.bodyMd) return [];
+    return [...profile.bodyMd.matchAll(/^##\s+(.+)$/gm)].map((m) => ({
+      text: m[1].trim(),
+      id: m[1].trim().toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+    }));
+  }, [profile?.bodyMd]);
+
+  if (!pages.data) {
+    return <div className="skeleton" style={{ height: 320 }} />;
+  }
+
+  if (!profile) {
+    return (
+      <div className="card">
+        <Empty
+          title="Nothing written yet"
+          hint="This page is built from what you have saved. Save a few things — or answer a question in “fill the gaps” — and it will write itself."
+        />
+      </div>
+    );
+  }
+
   return (
     <>
-      <div className="grid-4">
-        <div className="stat">
-          <div className="label">Memories</div>
-          <div className="value">{boot.counts.memories}</div>
-          <div className="foot">across {boot.workspaces.length} workspaces</div>
-        </div>
-        <div className="stat">
-          <div className="label">Preferences</div>
-          <div className="value">{prefs.data?.length ?? '—'}</div>
-          <div className="foot">how you like to work</div>
-        </div>
-        <div className="stat">
-          <div className="label">Entities</div>
-          <div className="value">{boot.counts.entities}</div>
-          <div className="foot">people, tools, projects</div>
-        </div>
-        <div className="stat">
-          <div className="label">Tools connected</div>
-          <div className="value">{boot.connections.length}</div>
-          <div className="foot">
-            {boot.connections.map((c) => c.client_name).join(', ') || 'none yet'}
+      {profile.stale && (
+        <div className="banner warn">
+          <span className="dot" />
+          <div className="body">
+            <strong>Something this was based on has changed.</strong> A memory behind this page
+            was corrected or removed, so parts of it may be out of date.
           </div>
-        </div>
-      </div>
-
-      {/* ---------------------------------------------------------- profile */}
-      <div className="card">
-        <div className="card-head">
-          <h3>About you</h3>
-          <span className="hint">
-            {profile
-              ? `generated from ${profile.sourceCount} memories · ${relTime(profile.generatedAt)}`
-              : 'not generated yet'}
-          </span>
-          <div className="spacer" />
-          {profile?.stale && <Badge tone="warn">stale</Badge>}
-        </div>
-
-        {!profile ? (
-          <Empty
-            icon="◍"
-            title="No profile yet"
-            hint="Run the consolidation pass once there are memories to work from — npm run dream"
-          />
-        ) : (
-          <div className="card-body">
-            <Markdown text={profile.bodyMd} />
-
-            {profile.citations && profile.citations.length > 0 && (
-              <>
-                <div className="divider" style={{ margin: '16px 0 10px' }} />
-                <div className="faint" style={{ fontSize: 13, marginBottom: 6 }}>
-                  EVERY CLAIM ABOVE COMES FROM ONE OF THESE
-                </div>
-                <div className="row wrap" style={{ gap: 5 }}>
-                  {profile.citations.map((c) => (
-                    <button
-                      key={c.memoryId + c.claim}
-                      className="btn sm"
-                      style={{ fontSize: 13 }}
-                      onClick={() => setOpenSource(c.memoryId)}
-                      title={c.claim || c.memoryTitle}
-                    >
-                      {c.memoryStatus === 'retracted' && (
-                        <span className="dot" style={{ color: 'var(--danger)' }} />
-                      )}
-                      {c.memoryTitle ?? c.memoryId.slice(0, 8)}
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* ------------------------------------------------------ preferences */}
-      <div className="card">
-        <div className="card-head">
-          <h3>How you like to work</h3>
-          <span className="hint">handed to every agent that connects</span>
-          <div className="spacer" />
-          <span className="faint" style={{ fontSize: 13 }}>
-            stronger evidence ranks higher
-          </span>
-        </div>
-
-        {!prefs.data?.length ? (
-          <Empty
-            title="No preferences recorded"
-            hint="These accumulate as your agents notice how you work — or answer a few questions on the Train page."
-          />
-        ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>Preference</th>
-                <th style={{ width: 110 }}>Confidence</th>
-                <th style={{ width: 90 }}>Evidence</th>
-                <th style={{ width: 110 }}>Source</th>
-              </tr>
-            </thead>
-            <tbody>
-              {[...prefs.data]
-                .sort((a, b) => b.confidence - a.confidence)
-                .map((p) => (
-                  <tr key={p.id} className="clickable" onClick={() => setOpenSource(p.id)}>
-                    <td>
-                      <div style={{ fontWeight: 550 }}>{p.title}</div>
-                      <div className="muted" style={{ fontSize: 13.5 }}>{p.body}</div>
-                    </td>
-                    <td>
-                      <Confidence value={p.confidence} evidence={p.evidenceCount} />
-                    </td>
-                    <td className="faint">
-                      {p.evidenceCount === 1 ? 'stated once' : `seen ${p.evidenceCount}×`}
-                    </td>
-                    <td className="faint">{p.client}</td>
-                  </tr>
-                ))}
-            </tbody>
-          </table>
-        )}
-      </div>
-
-      {/* ------------------------------------------------------ other pages */}
-      {others.length > 0 && (
-        <div className="card">
-          <div className="card-head">
-            <h3>Generated pages</h3>
-            <span className="hint">consolidated views over your memories</span>
-          </div>
-          <table>
-            <thead>
-              <tr><th>Page</th><th>Kind</th><th className="num">Sources</th><th>Updated</th></tr>
-            </thead>
-            <tbody>
-              {others.map((p) => (
-                <tr key={p.id}>
-                  <td>
-                    <strong>{p.title}</strong>
-                    {p.stale && <Badge tone="warn">stale</Badge>}
-                    {p.summary && (
-                      <div className="muted" style={{ fontSize: 13.5 }}>{p.summary}</div>
-                    )}
-                  </td>
-                  <td><Badge>{p.kind}</Badge></td>
-                  <td className="num">{p.sourceCount}</td>
-                  <td className="faint">{relTime(p.generatedAt)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
         </div>
       )}
+
+      <div className="wiki">
+        <article className="wiki-body">
+          <header className="wiki-head">
+            <h1>{profile.title}</h1>
+            <div className="wiki-meta">
+              Updated {relTime(profile.generatedAt)} · built from{' '}
+              <strong>{profile.sourceCount}</strong> of your memories · written by rules, not a
+              language model
+            </div>
+          </header>
+
+          {profile.summary && <p className="wiki-lead">{profile.summary}</p>}
+
+          <div className="prose wiki-prose">
+            <Markdown text={profile.bodyMd} />
+          </div>
+
+          {profile.citations && profile.citations.length > 0 && (
+            <section className="wiki-refs" id="sources">
+              <h2>Sources</h2>
+              <p className="faint" style={{ fontSize: 14.5 }}>
+                Every claim above came from one of these. Open one to read it in full.
+              </p>
+              <ol className="ref-list">
+                {profile.citations.map((c, i) => (
+                  <li key={c.memoryId + i}>
+                    <button className="ref-link" onClick={() => setOpenSource(c.memoryId)}>
+                      {c.memoryTitle ?? c.claim}
+                    </button>
+                    {c.memoryStatus && c.memoryStatus !== 'active' && (
+                      <Badge tone="warn">{c.memoryStatus}</Badge>
+                    )}
+                  </li>
+                ))}
+              </ol>
+            </section>
+          )}
+        </article>
+
+        <aside className="wiki-side">
+          <div className="infobox">
+            <div className="infobox-head">At a glance</div>
+            <dl>
+              <div><dt>Memories</dt><dd>{boot.counts.memories}</dd></div>
+              <div><dt>Preferences</dt><dd>{prefs.data?.length ?? '—'}</dd></div>
+              <div><dt>People &amp; tools</dt><dd>{boot.counts.entities}</dd></div>
+              <div><dt>Projects</dt><dd>{boot.workspaces.length}</dd></div>
+              <div><dt>Tools connected</dt><dd>{boot.connections.length}</dd></div>
+            </dl>
+            {boot.connections.length > 0 && (
+              <div className="infobox-foot">
+                {boot.connections.map((c) => c.client_name).join(', ')}
+              </div>
+            )}
+          </div>
+
+          {toc.length > 0 && (
+            <nav className="toc">
+              <div className="toc-head">Contents</div>
+              <ol>
+                {toc.map((t, i) => (
+                  <li key={t.id}>
+                    <a href={`#${t.id}`}>
+                      <span className="toc-n">{i + 1}</span>
+                      {t.text}
+                    </a>
+                  </li>
+                ))}
+                {profile.citations?.length ? (
+                  <li>
+                    <a href="#sources">
+                      <span className="toc-n">{toc.length + 1}</span>Sources
+                    </a>
+                  </li>
+                ) : null}
+              </ol>
+            </nav>
+          )}
+
+          {others.length > 0 && (
+            <nav className="toc">
+              <div className="toc-head">Related pages</div>
+              <ol>
+                {others.map((p) => (
+                  <li key={p.id}>
+                    <a href={`#${p.slug}`}>{p.title}</a>
+                  </li>
+                ))}
+              </ol>
+            </nav>
+          )}
+        </aside>
+      </div>
+
+      {others.map((p) => (
+        <article className="wiki-body sub" id={p.slug} key={p.id}>
+          <h2>{p.title}</h2>
+          <div className="wiki-meta">
+            Updated {relTime(p.generatedAt)} · {p.sourceCount} sources
+            {p.stale && <> · <Badge tone="warn">may be out of date</Badge></>}
+          </div>
+          <div className="prose wiki-prose">
+            <Markdown text={p.bodyMd} />
+          </div>
+        </article>
+      ))}
 
       {openSource && (
         <SourceDrawer id={openSource} onClose={() => setOpenSource(null)} toast={toast} />
@@ -198,54 +188,25 @@ export function Profile({
 }
 
 function SourceDrawer({
-  id,
-  onClose,
-  toast,
+  id, onClose,
 }: {
   id: string;
   onClose: () => void;
   toast: (m: string, t?: 'ok' | 'danger') => void;
 }) {
-  const d = useAsync(() => api.memory(id), [id]);
-  const m = d.data?.memory;
-
+  const mem = useAsync(() => api.memory(id), [id]);
   return (
-    <Drawer title={m?.title ?? 'Source'} onClose={onClose}>
-      {!m ? (
-        <div className="skeleton" style={{ height: 100 }} />
+    <Drawer title="Source" onClose={onClose}>
+      {!mem.data ? (
+        <div className="skeleton" style={{ height: 120 }} />
       ) : (
         <>
-          <div className="row wrap" style={{ gap: 6 }}>
-            <Badge>{m.kind}</Badge>
-            <Badge tone={m.status === 'active' ? 'ok' : 'danger'}>{m.status}</Badge>
-            <Confidence value={m.confidence} evidence={m.evidenceCount} />
-            <span className="faint" style={{ fontSize: 13 }}>
-              recorded by {m.client} · {relTime(m.createdAt)}
-            </span>
+          <h3 style={{ marginBottom: 8 }}>{mem.data.memory.title}</h3>
+          <div className="faint" style={{ fontSize: 13.5, marginBottom: 16 }}>
+            {mem.data.memory.kind} · saved by {mem.data.memory.client} ·{' '}
+            {relTime(mem.data.memory.createdAt)}
           </div>
-          <div className="card">
-            <div className="card-body prose" style={{ fontSize: 14.5 }}>{m.body}</div>
-          </div>
-          {d.data!.sources.length > 0 && (
-            <div className="card">
-              <div className="card-head"><h3>Derived from</h3></div>
-              {d.data!.sources.map((s) => (
-                <div className="mem" key={s.id}>
-                  <div className="mem-title">{s.title}</div>
-                  <div className="mem-body">{s.body}</div>
-                </div>
-              ))}
-            </div>
-          )}
-          <button
-            className="btn"
-            onClick={() => {
-              void navigator.clipboard.writeText(m.id);
-              toast('Memory id copied');
-            }}
-          >
-            Copy id
-          </button>
+          <div className="prose">{mem.data.memory.body}</div>
         </>
       )}
     </Drawer>

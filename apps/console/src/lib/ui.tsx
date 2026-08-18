@@ -273,8 +273,16 @@ export function Markdown({ text }: { text: string }) {
     const line = raw.trimEnd();
     if (!line.trim()) { closeList(); continue; }
 
+    // Headings carry a slug id so a table of contents can link straight to
+    // them. Derived from the text, so the two cannot drift out of sync.
     const h = line.match(/^(#{1,4})\s+(.*)$/);
-    if (h) { closeList(); html.push(`<h${h[1].length}>${inline(h[2])}</h${h[1].length}>`); continue; }
+    if (h) {
+      closeList();
+      const level = h[1].length;
+      const id = h[2].trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      html.push(`<h${level} id="${id}">${inline(h[2])}</h${level}>`);
+      continue;
+    }
 
     if (/^(---|___|\*\*\*)$/.test(line.trim())) { closeList(); html.push('<hr/>'); continue; }
 

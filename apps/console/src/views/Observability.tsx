@@ -11,30 +11,33 @@ import { Badge, Bars, CodeBlock, Empty, relTime, useAsync, usePoll } from '../li
  * empty until something has genuinely happened.
  */
 
-type Tab = 'activity' | 'tools' | 'growth' | 'database' | 'cloud' | 'audit';
+/**
+ * Six tabs was six decisions to make before reading anything. Grouped into
+ * three: what just happened, how fast it is, and the machinery underneath —
+ * which is the order someone actually wants them in, and means the page opens
+ * on the one thing most people came for.
+ */
+type Tab = 'recent' | 'speed' | 'under';
 
 const TABS: Array<[Tab, string]> = [
-  ['activity', 'Activity'],
-  ['tools', 'Latency'],
-  ['growth', 'Growth'],
-  ['database', 'CockroachDB'],
-  ['cloud', 'Cloud MCP'],
-  ['audit', 'Audit'],
+  ['recent', 'What just happened'],
+  ['speed', 'Speed'],
+  ['under', 'Under the hood'],
 ];
 
 export function Observability({ boot }: { boot: Bootstrap }) {
-  const [tab, setTab] = useState<Tab>('activity');
+  const [tab, setTab] = useState<Tab>('recent');
 
   return (
     <>
       <div className="grid-4">
         <div className="stat">
-          <div className="label">Tool calls</div>
+          <div className="label">Things your tools did</div>
           <div className="value">{boot.counts.calls}</div>
-          <div className="foot">all time</div>
+          <div className="foot">reads and writes, all time</div>
         </div>
         <div className="stat">
-          <div className="label">Clients</div>
+          <div className="label">Tools connected</div>
           <div className="value">{boot.connections.length}</div>
           <div className="foot">
             {boot.connections.map((c) => c.client_name).join(', ') || 'none connected'}
@@ -43,12 +46,12 @@ export function Observability({ boot }: { boot: Bootstrap }) {
         <div className="stat">
           <div className="label">Memories</div>
           <div className="value">{boot.counts.memories}</div>
-          <div className="foot">{boot.counts.entities} entities extracted</div>
+          <div className="foot">{boot.counts.entities} people, tools and projects found</div>
         </div>
         <div className="stat">
-          <div className="label">Embeddings</div>
+          <div className="label">Search quality</div>
           <div className="value" style={{ fontSize: 15, lineHeight: 1.35, marginTop: 6 }}>
-            {boot.embedder.semantic ? 'semantic' : 'degraded'}
+            {boot.embedder.semantic ? 'understands meaning' : 'exact words only'}
           </div>
           <div className="foot">{boot.embedder.label}</div>
         </div>
@@ -66,12 +69,9 @@ export function Observability({ boot }: { boot: Bootstrap }) {
         ))}
       </div>
 
-      {tab === 'activity' && <Activity />}
-      {tab === 'tools' && <Latency />}
-      {tab === 'growth' && <Growth />}
-      {tab === 'database' && <Database />}
-      {tab === 'cloud' && <CloudMcp />}
-      {tab === 'audit' && <Audit />}
+      {tab === 'recent' && <Activity />}
+      {tab === 'speed' && <><Latency /><Growth /></>}
+      {tab === 'under' && <><Database /><CloudMcp /><Audit /></>}
     </>
   );
 }
