@@ -132,7 +132,7 @@ export function Train({
                   <span className="kbd">⌘</span> <span className="kbd">↵</span> to save
                 </span>
                 <div className="spacer" />
-                <button className="btn ghost" onClick={skip}>Skip</button>
+                <button className="btn ghost" onClick={skip} disabled={boot.readOnly}>Skip</button>
                 {open.length > 1 && (
                   <button
                     className="btn ghost"
@@ -144,7 +144,8 @@ export function Train({
                 <button
                   className="btn primary"
                   onClick={submit}
-                  disabled={busy || answer.trim().length < 2}
+                  disabled={boot.readOnly || busy || answer.trim().length < 2}
+                  title={boot.readOnly ? 'Answering writes a memory, and the public demo is read-only.' : undefined}
                 >
                   {busy ? 'Saving…' : 'Save'}
                 </button>

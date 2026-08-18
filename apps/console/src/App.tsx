@@ -283,7 +283,12 @@ export default function App() {
               )}
               {view === 'train' && <Train boot={boot.data} toast={toasts.push} reload={boot.reload} />}
               {view === 'memories' && (
-                <Memories workspace={workspace} toast={toasts.push} reload={boot.reload} />
+                <Memories
+                  workspace={workspace}
+                  toast={toasts.push}
+                  reload={boot.reload}
+                  readOnly={boot.data.readOnly}
+                />
               )}
               {view === 'workspaces' && (
                 <Workspaces
@@ -296,7 +301,9 @@ export default function App() {
               )}
               {view === 'graph' && <Graph workspace={workspace} />}
               {view === 'observability' && <Observability boot={boot.data} />}
-              {view === 'settings' && <Settings toast={toasts.push} />}
+              {view === 'settings' && (
+                <Settings toast={toasts.push} readOnly={boot.data.readOnly} />
+              )}
             </>
           )}
 

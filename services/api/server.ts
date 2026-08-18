@@ -294,6 +294,51 @@ async function consoleApi(req: IncomingMessage, res: ServerResponse, url: URL): 
     });
   }
 
+  // ---------------------------------------------------------------- export
+  //
+  // Everything, as one JSON file. "Yours" is a claim the product makes on its
+  // landing line, and a memory system you cannot walk away from is a trap with
+  // good manners — so the door out is one GET, no format lock-in, and it works
+  // for read-only demo visitors too, because reading is all it does.
+  if (route === '/export' && req.method === 'GET') {
+    const [account, workspaces, memories, entities, pages] = await Promise.all([
+      orbis.db.one(`SELECT display_name, email, created_at FROM account WHERE id = $1`, [accountId]),
+      session.workspaces.list(),
+      orbis.db.query(
+        `SELECT id, workspace_id, kind, title, body, source, client, confidence,
+                evidence_count, status, tags, created_at, updated_at, superseded_by
+           FROM memory WHERE account_id = $1 ORDER BY created_at`,
+        [accountId],
+      ),
+      orbis.db.query(
+        `SELECT id, kind, name, canonical, summary, mention_count, first_seen, last_seen
+           FROM entity WHERE account_id = $1 ORDER BY mention_count DESC`,
+        [accountId],
+      ),
+      orbis.db.query(
+        `SELECT slug, title, kind, body_md, summary, generated_at
+           FROM wiki_page WHERE account_id = $1 ORDER BY slug`,
+        [accountId],
+      ),
+    ]);
+
+    const stamp = new Date().toISOString().slice(0, 10);
+    res.writeHead(200, {
+      ...cors(),
+      'Content-Type': 'application/json',
+      'Content-Disposition': `attachment; filename="orbis-export-${stamp}.json"`,
+    });
+    return void res.end(JSON.stringify({
+      format: 'orbis-export/1',
+      exportedAt: new Date().toISOString(),
+      account,
+      workspaces,
+      memories,
+      entities,
+      pages,
+    }, null, 2));
+  }
+
   // -------------------------------------------------------------- memories
   if (route === '/memories' && req.method === 'GET') {
     const items = await session.memories.list({

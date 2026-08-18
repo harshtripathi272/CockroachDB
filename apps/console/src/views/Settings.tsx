@@ -49,7 +49,13 @@ const KEYS: KeyFieldSpec[] = [
   },
 ];
 
-export function Settings({ toast }: { toast: (m: string, t?: 'ok' | 'danger') => void }) {
+export function Settings({
+  toast,
+  readOnly = false,
+}: {
+  toast: (m: string, t?: 'ok' | 'danger') => void;
+  readOnly?: boolean;
+}) {
   const state = useAsync<SettingsPayload>(() => api.settings(), []);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
@@ -87,6 +93,16 @@ export function Settings({ toast }: { toast: (m: string, t?: 'ok' | 'danger') =>
 
   return (
     <>
+      {readOnly && (
+        <div className="banner">
+          <span className="dot" />
+          <div className="body">
+            <strong>Settings are locked on the public demo.</strong> You can see how the
+            page works, but saving needs an API token — otherwise any visitor could
+            change keys for everyone.
+          </div>
+        </div>
+      )}
       <div className="card">
         <div className="card-head">
           <h3>Keys</h3>
@@ -129,7 +145,7 @@ export function Settings({ toast }: { toast: (m: string, t?: 'ok' | 'danger') =>
                   <div className="row" style={{ gap: 8 }}>
                     <button
                       className="btn primary"
-                      disabled={busy !== null || !(drafts[k.id] ?? '').trim()}
+                      disabled={readOnly || busy !== null || !(drafts[k.id] ?? '').trim()}
                       onClick={() => save(k.id, (drafts[k.id] ?? '').trim())}
                     >
                       {busy === k.id ? 'Saving…' : 'Save'}
@@ -137,7 +153,7 @@ export function Settings({ toast }: { toast: (m: string, t?: 'ok' | 'danger') =>
                     {cur.set && (
                       <button
                         className="btn danger"
-                        disabled={busy !== null}
+                        disabled={readOnly || busy !== null}
                         onClick={() => save(k.id, null)}
                       >
                         Remove
@@ -175,7 +191,7 @@ export function Settings({ toast }: { toast: (m: string, t?: 'ok' | 'danger') =>
             <div className="set-action">
               <button
                 className="btn"
-                disabled={busy !== null}
+                disabled={readOnly || busy !== null}
                 onClick={() => toggleDecay(!s.settings.decayEnabled)}
               >
                 {busy === 'decay'

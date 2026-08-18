@@ -11,10 +11,12 @@ export function Memories({
   workspace,
   toast,
   reload,
+  readOnly = false,
 }: {
   workspace: string | null;
   toast: (m: string, t?: 'ok' | 'danger') => void;
   reload: () => void;
+  readOnly?: boolean;
 }) {
   const [query, setQuery] = useState('');
   const [debounced, setDebounced] = useState('');
@@ -63,8 +65,30 @@ export function Memories({
             <option key={k} value={k}>{k}</option>
           ))}
         </select>
-        <button className="btn primary" onClick={() => setAdding(true)}>Add</button>
+        <a
+          className="btn"
+          href="/api/console/export"
+          download
+          title="Download everything — memories, projects, entities, pages — as one JSON file. It is your data; here is the door."
+        >
+          Export
+        </a>
+        <button
+          className="btn primary"
+          onClick={() => setAdding(true)}
+          disabled={readOnly}
+          title={readOnly ? 'The public demo is read-only — connect with an API token to add memories.' : undefined}
+        >
+          Add
+        </button>
       </div>
+
+      {readOnly && (
+        <div className="faint" style={{ fontSize: 13 }}>
+          Read-only demo: browse and search everything, and take a copy with Export.
+          Adding and correcting need an API token.
+        </div>
+      )}
 
       {debounced && (
         <div className="faint" style={{ fontSize: 13 }}>

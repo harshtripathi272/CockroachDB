@@ -49,7 +49,14 @@ export function Workspaces({
     <>
       <div className="row" style={{ marginBottom: 4 }}>
         <div className="spacer" />
-        <button className="btn primary" onClick={() => setCreating(true)}>New project</button>
+        <button
+          className="btn primary"
+          onClick={() => setCreating(true)}
+          disabled={boot.readOnly}
+          title={boot.readOnly ? 'The public demo is read-only — run Orbis yourself to create projects.' : undefined}
+        >
+          New project
+        </button>
       </div>
 
       {boot.workspaces.length === 0 ? (

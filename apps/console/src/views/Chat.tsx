@@ -16,6 +16,19 @@ import { Badge, Empty, Markdown, useAsync } from '../lib/ui.tsx';
  * runs the retrieval half for real and says so in a banner, because a chat box
  * that silently invents answers is worse than one that admits its limits.
  */
+/**
+ * Openers for an empty chat.
+ *
+ * Each is phrased to avoid the vocabulary of the memory that answers it, so the
+ * first click a new person makes demonstrates semantic recall rather than
+ * string matching.
+ */
+const STARTERS = [
+  'How long do people have to get their money back?',
+  'What are the rules for my notes vault?',
+  'What programming language do I lean towards, and why?',
+];
+
 export function Chat({
   boot,
   workspace,
@@ -39,6 +52,7 @@ export function Chat({
 
   const generative = boot.chat.generative;
   const models = boot.chat.models;
+  const readOnly = boot.readOnly;
 
   // Select the most recent chat on first load, so the tab is never an empty
   // room when there is history to show.
@@ -71,8 +85,8 @@ export function Chat({
     box.current?.focus();
   }, [model, workspace, chats]);
 
-  const send = useCallback(async () => {
-    const text = draft.trim();
+  const send = useCallback(async (forced?: string) => {
+    const text = (forced ?? draft).trim();
     if (!text || busy) return;
 
     let chatId = active;
@@ -128,7 +142,12 @@ export function Chat({
   return (
     <div className="chat-layout">
       <aside className="chat-rail">
-        <button className="btn primary block" onClick={newChat}>
+        <button
+          className="btn primary block"
+          onClick={newChat}
+          disabled={readOnly}
+          title={readOnly ? 'The public demo is read-only — the conversations below are real ones to browse.' : undefined}
+        >
           + New chat
         </button>
 
@@ -147,16 +166,18 @@ export function Chat({
               <div className="chat-item-meta">
                 {c.messages} message{c.messages === 1 ? '' : 's'}
               </div>
-              <button
-                className="chat-item-x"
-                title="Delete conversation"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  void remove(c.id);
-                }}
-              >
-                ×
-              </button>
+              {!readOnly && (
+                <button
+                  className="chat-item-x"
+                  title="Delete conversation"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void remove(c.id);
+                  }}
+                >
+                  ×
+                </button>
+              )}
             </div>
           ))}
         </div>
@@ -195,15 +216,26 @@ export function Chat({
 
         <div className="chat-scroll">
           {messages.length === 0 && !busy && (
-            <Empty
-              icon="◇"
-              title="Ask your memory something"
-              hint={
-                generative
-                  ? 'This agent holds the same nine tools your other clients do. It can search what you know, write new memories, and correct old ones — and every call it makes is traced below the reply.'
-                  : 'Ask a question and Orbis will search your memories semantically and quote what it finds. Try phrasing it in words that do not appear in the memory itself — that is the part worth testing.'
-              }
-            />
+            <>
+              <Empty
+                icon="◇"
+                title="Ask your memory something"
+                hint={
+                  generative
+                    ? 'This agent holds the same nine tools your other clients do. It can search what you know, write new memories, and correct old ones — and every call it makes is traced below the reply.'
+                    : 'Ask a question and Orbis will search your memories semantically and quote what it finds. Try phrasing it in words that do not appear in the memory itself — that is the part worth testing.'
+                }
+              />
+              {!readOnly && (
+                <div className="row wrap" style={{ gap: 8, justifyContent: 'center', marginTop: 4 }}>
+                  {STARTERS.map((q) => (
+                    <button key={q} className="btn sm" onClick={() => void send(q)}>
+                      {q}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </>
           )}
 
           {messages.map((m) => (
@@ -236,7 +268,12 @@ export function Chat({
             ref={box}
             value={draft}
             rows={2}
-            placeholder="Ask about anything you have told your agents…"
+            disabled={readOnly}
+            placeholder={
+              readOnly
+                ? 'The public demo is read-only — browse the conversations on the left, or run Orbis yourself to chat.'
+                : 'Ask about anything you have told your agents…'
+            }
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
@@ -245,7 +282,11 @@ export function Chat({
               }
             }}
           />
-          <button className="btn primary" disabled={busy || !draft.trim()} onClick={send}>
+          <button
+            className="btn primary"
+            disabled={readOnly || busy || !draft.trim()}
+            onClick={() => void send()}
+          >
             Send
           </button>
         </footer>

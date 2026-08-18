@@ -249,13 +249,25 @@ export function Setup({
           <CodeBlock code={endpoint} />
 
           <div className="row" style={{ gap: 8 }}>
-            <button className="btn primary" onClick={createToken}>
+            <button
+              className="btn primary"
+              onClick={createToken}
+              disabled={boot.readOnly}
+              title={boot.readOnly ? 'The public demo cannot mint tokens — run Orbis yourself and this button works.' : undefined}
+            >
               Create a token
             </button>
             <span className="faint" style={{ fontSize: 13.5 }}>
               {tokens.data?.filter((t) => !t.revoked_at).length ?? 0} active
             </span>
           </div>
+
+          {boot.readOnly && (
+            <div className="faint" style={{ fontSize: 13 }}>
+              On the public demo this page is a preview: everything below is exactly what
+              a self-hosted Orbis shows, but tokens can only be created by the owner.
+            </div>
+          )}
 
           {revealed && (
             <div className="banner ok">
