@@ -349,7 +349,20 @@ export class MemoryStore {
        LIMIT $${finalLimit}`;
 
     const rows = await this.#db.query(sql, params);
-    return rows.map(toMemory);
+    const hits = rows.map(toMemory);
+
+    // Relative cutoff, applied after ranking. See SearchOptions.relevanceWindow
+    // for why this is relative and not absolute. The best hit always survives:
+    // returning nothing when something ranked first is worse than returning one
+    // weak answer the caller can judge for itself.
+    if (opts.relevanceWindow !== undefined && hits.length > 1) {
+      const best = hits[0].distance;
+      if (best !== undefined) {
+        const ceiling = best + opts.relevanceWindow;
+        return hits.filter((h, i) => i === 0 || (h.distance ?? Infinity) <= ceiling);
+      }
+    }
+    return hits;
   }
 
   /** Exact lookup by id. */

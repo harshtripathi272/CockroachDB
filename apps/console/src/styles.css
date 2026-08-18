@@ -697,3 +697,243 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; font-family: var
   .nav-item { justify-content: center; }
   .content { padding: 14px; }
 }
+
+/* ---------------------------------------------------------------- chat ---
+ *
+ * A three-part surface: conversation rail, transcript, composer. The whole
+ * thing is height-locked to the viewport so the composer stays put and only
+ * the transcript scrolls — a chat that pushes its own input box off-screen is
+ * the single most annoying thing a chat UI can do.
+ */
+
+.chat-layout {
+  display: grid;
+  grid-template-columns: 236px 1fr;
+  gap: 16px;
+  height: calc(100vh - 132px);
+  min-height: 420px;
+}
+
+.chat-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+}
+
+.btn.block { width: 100%; justify-content: center; }
+
+.chat-list {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+}
+
+.chat-item {
+  position: relative;
+  padding: 9px 26px 9px 10px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background .12s ease, border-color .12s ease;
+}
+.chat-item:hover { background: var(--surface-2); }
+.chat-item.active {
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+}
+
+.chat-item-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-item-meta { font-size: 11.5px; color: var(--text-3); margin-top: 1px; }
+
+.chat-item-x {
+  position: absolute;
+  top: 7px; right: 6px;
+  border: 0; background: none; cursor: pointer;
+  color: var(--text-3);
+  font-size: 15px; line-height: 1;
+  padding: 2px 4px; border-radius: var(--radius-sm);
+  opacity: 0;
+  transition: opacity .12s ease;
+}
+.chat-item:hover .chat-item-x { opacity: 1; }
+.chat-item-x:hover { color: var(--danger); background: var(--danger-soft); }
+
+.chat-main {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.chat-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+  flex: none;
+}
+.chat-model { display: flex; align-items: center; gap: 8px; }
+.chat-model label {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--text-3); font-weight: 600;
+}
+.chat-model select {
+  font: inherit; font-size: 13px;
+  padding: 5px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+}
+.chat-head .badge { margin-left: auto; }
+
+.chat-notice { margin: 12px 14px 0; flex: none; }
+
+.chat-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+}
+
+.msg { display: flex; flex-direction: column; gap: 4px; max-width: 760px; }
+.msg.user { align-self: flex-end; align-items: flex-end; }
+
+.msg-role {
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em;
+  color: var(--text-3); font-weight: 600;
+}
+
+.msg-body {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 10px 13px;
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+.msg.user .msg-body {
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+}
+.msg-body .prose > :first-child { margin-top: 0; }
+.msg-body .prose > :last-child { margin-bottom: 0; }
+.msg-body.thinking { display: flex; align-items: center; gap: 9px; }
+
+/* Three dots that breathe — enough to say "working" without a spinner. */
+.dots { display: inline-flex; gap: 3px; }
+.dots i {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: var(--accent);
+  animation: dot 1.15s ease-in-out infinite;
+}
+.dots i:nth-child(2) { animation-delay: .17s; }
+.dots i:nth-child(3) { animation-delay: .34s; }
+@keyframes dot {
+  0%, 70%, 100% { opacity: .25; transform: translateY(0); }
+  35%           { opacity: 1;   transform: translateY(-3px); }
+}
+
+/* The trace. Collapsed by default; the summary line always earns its row. */
+.trace { margin-top: 9px; border-top: 1px dashed var(--border-strong); padding-top: 7px; }
+
+.trace-head {
+  display: flex; align-items: center; gap: 7px;
+  border: 0; background: none; cursor: pointer;
+  font: inherit; font-size: 12px;
+  color: var(--text-2);
+  padding: 2px 0;
+}
+.trace-head:hover { color: var(--accent); }
+.caret { display: inline-block; transition: transform .14s ease; font-size: 9px; }
+.caret.open { transform: rotate(90deg); }
+
+.trace-body { margin-top: 7px; display: flex; flex-direction: column; gap: 7px; }
+
+.trace-step {
+  border-left: 2px solid var(--accent-border);
+  padding-left: 9px;
+}
+.trace-step.failed { border-left-color: var(--danger); }
+.trace-step-head {
+  display: flex; align-items: baseline; gap: 8px;
+  margin-bottom: 3px;
+}
+.trace-step-head code {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.trace-io {
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.45;
+  background: var(--surface-3);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  margin: 0 0 4px;
+  max-height: 190px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-2);
+}
+.trace-io.out { background: var(--surface); border: 1px solid var(--border); }
+
+.chat-compose {
+  display: flex;
+  gap: 9px;
+  padding: 11px 14px;
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+  flex: none;
+}
+.chat-compose textarea {
+  flex: 1;
+  font: inherit;
+  font-size: 13.5px;
+  line-height: 1.5;
+  padding: 9px 11px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  resize: none;
+}
+.chat-compose textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.chat-compose .btn { align-self: flex-end; }
+
+.pad { padding: 8px 10px; }
+
+@media (max-width: 860px) {
+  .chat-layout { grid-template-columns: 1fr; height: auto; }
+  .chat-rail { flex-direction: row; align-items: center; flex-wrap: wrap; }
+  .chat-list { flex-direction: row; overflow-x: auto; }
+  .chat-item { min-width: 150px; }
+  .chat-main { height: 70vh; }
+}

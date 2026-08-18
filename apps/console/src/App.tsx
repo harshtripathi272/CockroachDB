@@ -9,9 +9,10 @@ import { Memories } from './views/Memories.tsx';
 import { Workspaces } from './views/Workspaces.tsx';
 import { Graph } from './views/Graph.tsx';
 import { Observability } from './views/Observability.tsx';
+import { Chat } from './views/Chat.tsx';
 
 type ViewId =
-  | 'setup' | 'profile' | 'train' | 'memories'
+  | 'setup' | 'chat' | 'profile' | 'train' | 'memories'
   | 'workspaces' | 'graph' | 'observability';
 
 const VIEWS: Array<{
@@ -22,6 +23,7 @@ const VIEWS: Array<{
   subtitle: string;
 }> = [
   { id: 'setup',        label: 'Setup',      icon: '◎', group: 'Start',  subtitle: 'Connect your tools to one memory' },
+  { id: 'chat',         label: 'Chat',       icon: '◐', group: 'Start',  subtitle: 'Talk to your memory, with every tool' },
   { id: 'profile',      label: 'Profile',    icon: '◍', group: 'You',    subtitle: 'What Orbis knows about you' },
   { id: 'train',        label: 'Train',      icon: '◔', group: 'You',    subtitle: 'Fill the gaps in your profile' },
   { id: 'memories',     label: 'Memories',   icon: '≡', group: 'Memory', subtitle: 'Everything, searchable' },
@@ -56,6 +58,18 @@ export default function App() {
   useEffect(() => {
     window.location.hash = view;
   }, [view]);
+
+  // The hash was written on navigation but never read again after mount, so the
+  // back button and a pasted deep link both silently did nothing — the URL
+  // changed and the page did not. Listening closes the loop in both directions.
+  useEffect(() => {
+    const onHash = () => {
+      const h = window.location.hash.slice(1) as ViewId;
+      if (VIEWS.some((v) => v.id === h)) setView(h);
+    };
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
 
   useEffect(() => {
     if (workspace) localStorage.setItem('orbis-workspace', workspace);
@@ -158,7 +172,7 @@ export default function App() {
           )}
         </header>
 
-        <div className={`content${view === 'graph' || view === 'observability' ? ' wide' : ''}`}>
+        <div className={`content${view === 'graph' || view === 'observability' || view === 'chat' ? ' wide' : ''}`}>
           {boot.error && (
             <div className="banner danger">
               <span className="dot" />
@@ -187,6 +201,9 @@ export default function App() {
             <>
               {view === 'setup' && (
                 <Setup boot={boot.data} reload={boot.reload} toast={toasts.push} />
+              )}
+              {view === 'chat' && (
+                <Chat boot={boot.data} workspace={workspace} onWrote={boot.reload} />
               )}
               {view === 'profile' && (
                 <Profile boot={boot.data} workspace={workspace} toast={toasts.push} />

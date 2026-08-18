@@ -9,6 +9,9 @@ import { logToolCall } from '../../packages/orbis-core/src/index.ts';
 import { createMcpHandler } from '../mcp/http.ts';
 import { TOOLS, TOOLS_BY_NAME } from '../mcp/tools.ts';
 import { loadEnv, resolveConnectionString } from '../../scripts/env.mjs';
+import { runAgent } from '../agent/loop.ts';
+import { selectChatProviders, allModels } from '../agent/providers.ts';
+import type { Turn } from '../agent/providers.ts';
 
 /**
  * The Orbis server.
@@ -235,6 +238,12 @@ async function consoleApi(req: IncomingMessage, res: ServerResponse, url: URL): 
         reason: choice.reason,
         rejected: choice.rejected,
       },
+      chat: {
+        models: allModels(),
+        defaultModel: selectChatProviders().defaultModel,
+        reason: selectChatProviders().reason,
+        generative: selectChatProviders().providers.some((p) => p.generative),
+      },
       target: TARGET,
       dev: DEV,
     });
@@ -404,6 +413,149 @@ async function consoleApi(req: IncomingMessage, res: ServerResponse, url: URL): 
   const tokMatch = route.match(/^\/tokens\/([0-9a-f-]{36})$/i);
   if (tokMatch && req.method === 'DELETE') {
     return json(res, 200, { revoked: await orbis.tokens.revoke(accountId, tokMatch[1]) });
+  }
+
+  // ----------------------------------------------------------------- chat
+  //
+  // The Chat tab is one more MCP client, not a parallel feature. Every turn
+  // runs the same nine tools an external agent gets, writes with
+  // `client: 'orbis-chat'`, and lands in the same tool_call table — so a
+  // memory created here is indistinguishable from one Claude Code wrote, and
+  // the Signals tab counts it without knowing chat exists.
+
+  if (route === '/models') {
+    const { defaultModel, reason } = selectChatProviders();
+    return json(res, 200, { models: allModels(), defaultModel, reason });
+  }
+
+  if (route === '/chats' && req.method === 'GET') {
+    const rows = await orbis.db.query(
+      `SELECT c.id, c.title, c.model, c.workspace_id, c.updated_at,
+              (SELECT count(*) FROM message m WHERE m.chat_id = c.id)::INT AS messages
+         FROM chat c WHERE c.account_id = $1 ORDER BY c.updated_at DESC LIMIT 50`,
+      [accountId],
+    );
+    return json(res, 200, { chats: rows });
+  }
+
+  if (route === '/chats' && req.method === 'POST') {
+    const b = await body(req);
+    const row = await orbis.db.one(
+      `INSERT INTO chat (account_id, workspace_id, title, model)
+       VALUES ($1,$2,$3,$4) RETURNING id, title, model, workspace_id, created_at`,
+      [
+        accountId,
+        b.workspaceId ?? null,
+        b.title ?? 'New chat',
+        b.model ?? selectChatProviders().defaultModel,
+      ],
+    );
+    return json(res, 201, row);
+  }
+
+  const chatMatch = route.match(/^\/chats\/([0-9a-f-]{36})(\/messages)?$/i);
+  if (chatMatch) {
+    const [, chatId, isMessages] = chatMatch;
+    const chat = await orbis.db.one(
+      `SELECT * FROM chat WHERE id = $1 AND account_id = $2`, [chatId, accountId],
+    );
+    if (!chat) return json(res, 404, { error: 'no such chat' });
+
+    if (req.method === 'GET') {
+      const rows = await orbis.db.query(
+        `SELECT id, role, content, tool_calls, created_at FROM message
+          WHERE chat_id = $1 ORDER BY created_at`,
+        [chatId],
+      );
+      return json(res, 200, { chat, messages: rows });
+    }
+
+    if (req.method === 'DELETE') {
+      await orbis.db.query(`DELETE FROM chat WHERE id = $1 AND account_id = $2`, [chatId, accountId]);
+      return json(res, 200, { ok: true });
+    }
+
+    if (isMessages && req.method === 'POST') {
+      const b = await body(req);
+      const text = String(b.text ?? '').trim();
+      if (!text) return json(res, 400, { error: 'text is required' });
+
+      const model = b.model ?? chat.model ?? selectChatProviders().defaultModel;
+
+      // Replay the stored transcript. Only user and assistant text is kept —
+      // tool traffic is recorded for the UI but not fed back, because the
+      // provider-native blocks a replayed tool_result must reference do not
+      // survive a round trip through the database. Each turn therefore starts
+      // its tool use fresh, which is also what keeps a long chat's context
+      // from growing without bound.
+      const prior = await orbis.db.query(
+        `SELECT role, content FROM message
+          WHERE chat_id = $1 AND role IN ('user','assistant') ORDER BY created_at`,
+        [chatId],
+      );
+      const history: Turn[] = prior.map((m: any) =>
+        m.role === 'user'
+          ? { role: 'user' as const, text: m.content }
+          : { role: 'assistant' as const, text: m.content },
+      );
+      history.push({ role: 'user', text });
+
+      await orbis.db.query(
+        `INSERT INTO message (chat_id, account_id, role, content) VALUES ($1,$2,'user',$3)`,
+        [chatId, accountId, text],
+      );
+
+      const workspace = chat.workspace_id
+        ? await session.workspaces.get(chat.workspace_id)
+        : await session.workspaces.getDefault();
+
+      let result;
+      try {
+        result = await runAgent({
+          session,
+          model,
+          history,
+          workspaceName: workspace?.name ?? null,
+          accountId,
+          db: orbis.db as any,
+        });
+      } catch (err) {
+        const message = (err as Error).message;
+        await orbis.db.query(
+          `INSERT INTO message (chat_id, account_id, role, content) VALUES ($1,$2,'assistant',$3)`,
+          [chatId, accountId, `The model call failed: ${message}`],
+        );
+        return json(res, 502, { error: message });
+      }
+
+      const saved = await orbis.db.one(
+        `INSERT INTO message (chat_id, account_id, role, content, tool_calls, tokens_in, tokens_out)
+         VALUES ($1,$2,'assistant',$3,$4,$5,$6)
+         RETURNING id, role, content, tool_calls, created_at`,
+        [chatId, accountId, result.text, JSON.stringify(result.steps),
+         result.usage.in, result.usage.out],
+      );
+
+      // First exchange names the chat, so the sidebar is readable without
+      // making the user title anything.
+      const title =
+        chat.title === 'New chat'
+          ? text.slice(0, 60) + (text.length > 60 ? '…' : '')
+          : chat.title;
+      await orbis.db.query(
+        `UPDATE chat SET updated_at = now(), model = $2, title = $3 WHERE id = $1`,
+        [chatId, model, title],
+      );
+
+      return json(res, 200, {
+        message: saved,
+        steps: result.steps,
+        wrote: result.wrote,
+        generative: result.generative,
+        provider: result.provider,
+        title,
+      });
+    }
   }
 
   // -------------------------------------------------------- observability

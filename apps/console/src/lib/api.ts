@@ -106,6 +106,12 @@ export interface Bootstrap {
     reason: string;
     rejected: Array<{ id: string; error: string }>;
   };
+  chat: {
+    models: ChatModelInfo[];
+    defaultModel: string;
+    reason: string;
+    generative: boolean;
+  };
   target: string;
   dev: boolean;
 }
@@ -156,6 +162,41 @@ export interface GraphSnapshot {
     dstKind: string; dstId: string;
     rel: string; weight: number;
   }>;
+}
+
+
+export interface ChatModelInfo {
+  id: string;
+  label: string;
+  note: string;
+  provider: string;
+  generative: boolean;
+}
+
+export interface ChatSummary {
+  id: string;
+  title: string;
+  model: string;
+  workspace_id: string | null;
+  updated_at: string;
+  messages: number;
+}
+
+export interface AgentStep {
+  kind: 'tool' | 'text';
+  tool?: string;
+  input?: Record<string, unknown>;
+  output?: string;
+  latencyMs?: number;
+  ok?: boolean;
+}
+
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  tool_calls: AgentStep[] | null;
+  created_at: string;
 }
 
 const BASE = '/api/console';
@@ -279,6 +320,25 @@ export const api = {
 
   audit: (limit = 100) =>
     req<{ entries: any[] }>(`/audit${qs({ limit })}`).then((r) => r.entries),
+
+  models: () =>
+    req<{ models: ChatModelInfo[]; defaultModel: string; reason: string }>('/models'),
+
+  chats: () => req<{ chats: ChatSummary[] }>('/chats').then((r) => r.chats),
+
+  createChat: (b: { title?: string; model?: string; workspaceId?: string | null } = {}) =>
+    req<ChatSummary>('/chats', { method: 'POST', body: JSON.stringify(b) }),
+
+  chat: (id: string) =>
+    req<{ chat: ChatSummary; messages: ChatMessage[] }>(`/chats/${id}`),
+
+  deleteChat: (id: string) => req<{ ok: boolean }>(`/chats/${id}`, { method: 'DELETE' }),
+
+  send: (id: string, text: string, model?: string) =>
+    req<{
+      message: ChatMessage; steps: AgentStep[]; wrote: string[];
+      generative: boolean; provider: string; title: string;
+    }>(`/chats/${id}/messages`, { method: 'POST', body: JSON.stringify({ text, model }) }),
 
   crdb: () => req<any>('/crdb'),
 

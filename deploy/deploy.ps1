@@ -260,8 +260,16 @@ export { handler } from './services/api/lambda.ts';
   # tar, not Compress-Archive. Compress-Archive silently omits deeply nested
   # paths, which produced a bundle that looked fine and was missing files at
   # runtime. tar's ./-prefixed entries are normalised by Lambda without issue.
+  # Resolve Windows' bsdtar by absolute path. A bare `tar` picks up whatever is
+  # first on PATH, and when this script is launched from a shell that puts Git
+  # Bash ahead of System32 that is GNU tar — which reads the "D:" in an absolute
+  # destination as a remote host and fails with "Cannot connect to D: resolve
+  # failed". The zip is then missing, and the next step reports it as though
+  # -SkipBuild had been passed.
+  $tar = Join-Path $env:SystemRoot "System32\tar.exe"
+  if (-not (Test-Path $tar)) { $tar = "tar" }
   Push-Location $buildDir
-  tar -a -c -f $zipPath *
+  & $tar -a -c -f $zipPath *
   Pop-Location
 
   $zipMb = [math]::Round((Get-Item $zipPath).Length / 1MB, 1)

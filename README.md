@@ -44,6 +44,11 @@ four places because no two tools can share it.
   query finds everything derived from it, however many hops away.
 - **It asks.** Orbis works out what it does not know about you and raises
   questions — answerable in the console, or by any connected agent mid-task.
+- **A chat that is just another client.** The console's Chat tab holds the same
+  nine tools an external agent gets, writes with `client: 'orbis-chat'`, and
+  shows the tool trace under every reply. Model is selectable per conversation.
+- **Capture from a phone.** A Telegram bot runs the same tool layer, so
+  something noted on a walk is in Claude Code an hour later.
 
 ---
 
@@ -69,6 +74,18 @@ Populate it with something real rather than fiction:
 node scripts/import.ts --taste                      # a Command Code taste profile
 node scripts/import.ts --vault="<path>" --dry-run   # an Obsidian vault, preview first
 npm run dream                                       # consolidate into a profile
+```
+
+Optional surfaces:
+
+```bash
+# Chat with a real model instead of retrieval-only. Either key works; with
+# neither, the Chat tab still answers from memory and says so.
+ANTHROPIC_API_KEY=sk-ant-... npm run api
+
+# Telegram. Get a token from @BotFather, then pair a chat by sending it
+# `/start <an Orbis token from Setup>`.
+TELEGRAM_BOT_TOKEN=... npm run telegram
 ```
 
 ---
@@ -106,10 +123,23 @@ propagation, bitemporal history, serializable retry behaviour under 20-way
 contention, row-level security, entity extraction, the MCP wire protocol,
 consolidation — and all of it running on the deployed Lambda, not only locally.
 
+**Partly real, and labelled as such in the product:**
+
+- **Chat needs a key you supply.** The Chat tab probes for `ANTHROPIC_API_KEY`
+  and `OPENAI_API_KEY` at startup. With one, it runs a full tool-calling loop
+  over all nine tools. With neither — which is how the public demo runs — it
+  falls back to *retrieval only*: it embeds your question, searches, and quotes
+  the matches with citations, and says plainly in a banner that no model wrote
+  the reply. The retrieval half is genuinely working; the writing half is
+  honestly missing rather than faked.
+- **The Telegram bot needs a bot token**, from `@BotFather`. The code and its
+  tests are complete; there is no hosted instance to point you at.
+
 **Absent:**
 
-- **No LLM anywhere.** Consolidation and entity extraction are deterministic by
-  design, not by limitation (see below). There is no chat feature.
+- **No LLM in consolidation or entity extraction.** Both are deterministic by
+  design, not by limitation (see below). That is unchanged — the chat agent is
+  a separate surface and nothing in the memory pipeline depends on it.
 - **Nothing is simulated.** The one thing that was — keyword-only search on the
   deployed copy — is fixed, and how is worth reading.
 
@@ -218,6 +248,46 @@ After adding a least-privilege `orbis_app` role and forcing RLS:
 The application still connects as owner and filters by `account_id` explicitly;
 switching the runtime role is a configuration change. The policies are proven to
 work, and that proof is in the test suite.
+
+---
+
+### 4. An absolute relevance cutoff cannot work, and a relative one can
+
+Search returned its top *k* by cosine distance with no notion of "close
+enough", so a targeted question came back with six results of which one was
+relevant. The obvious fix is a distance ceiling. Measured against the live
+corpus, it does not work:
+
+| query | best match |
+|---|---|
+| `tell me about pineapples on mars` — nonsense | **0.780** |
+| `what database am I using` — fair question | **0.777** |
+
+The nonsense query's nearest memory is *closer* than the fair one's. MiniLM's
+absolute distances are not comparable across queries, so no ceiling separates
+them.
+
+What is comparable is the shape of the tail. A question the corpus can answer
+has one or two matches noticeably closer than the rest; one it cannot has a
+flat run of mediocre ones. Cutting relative to the best hit — keep anything
+within 0.10 of it — exploits that:
+
+| query | before | after |
+|---|---|---|
+| `how long do people have to get their money back?` | 6 results | **1** |
+| `what did I learn about vector indexes` | 8 results | **1** |
+| `what are my coding preferences` | 8 results | **3**, all genuine |
+
+The third row is why this is not just a smaller `limit`: a broad question still
+returns its real matches.
+
+For the case the window cannot fix — the nonsense query still has *something*
+nearest to it — `search_memory` now says so. When the best match is beyond
+0.75 it prefixes the results with *"No memory closely matches … treat them as
+loosely related"*. A model handed six mediocre rows with no signal answers
+confidently from them; told the retrieval was weak, it hedges. That guard lives
+in the tool layer, so every client inherits it rather than each reimplementing
+it.
 
 ---
 

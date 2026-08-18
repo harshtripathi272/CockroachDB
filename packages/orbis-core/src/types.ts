@@ -180,6 +180,22 @@ export interface SearchOptions {
   limit?: number;
   /** Cosine distance ceiling. Results further than this are dropped. */
   maxDistance?: number;
+  /**
+   * Keep only results within this cosine distance of the *best* match.
+   *
+   * An absolute ceiling cannot separate a good query from a nonsense one:
+   * measured against the demo corpus, "tell me about pineapples on mars"
+   * scored 0.780 to its nearest memory while the perfectly reasonable "what
+   * database am I using" scored 0.777 to its own. MiniLM's absolute distances
+   * simply are not comparable across queries.
+   *
+   * What *is* comparable is the shape of the tail. A query the corpus can
+   * answer has one or two matches noticeably closer than the rest; a query it
+   * cannot has a flat run of mediocre ones. Cutting relative to the best hit
+   * exploits that, and it is what turns "6 results, 1 of them relevant" into
+   * "1 result" on a targeted question.
+   */
+  relevanceWindow?: number;
   includeInactive?: boolean;
   tags?: string[];
 }

@@ -42,6 +42,26 @@ export interface ToolResult {
   count?: number;
 }
 
+/**
+ * Cosine distance beyond the best hit at which a result stops being part of the
+ * same answer. Measured, not guessed: on the demo corpus a targeted question
+ * ("how long do people have to get their money back?") went from six results,
+ * one of them relevant, to exactly one. A broad question ("what are my coding
+ * preferences") still returns its three genuine matches, which is the property
+ * that rules out simply lowering the limit.
+ */
+const RELEVANCE_WINDOW = 0.10;
+
+/**
+ * Distance past which even the top match is not really an answer.
+ *
+ * This is a floor on the *best* hit, not a filter, because absolute distances
+ * are not comparable across queries -- nonsense scored 0.780 to its nearest
+ * memory while a fair question scored 0.777 to its own. What the floor can
+ * honestly say is "nothing here is close", and that is worth saying out loud.
+ */
+const WEAK_MATCH_DISTANCE = 0.75;
+
 const str = (description: string, extra: Record<string, unknown> = {}) => ({
   type: 'string',
   description,
@@ -106,6 +126,12 @@ export const TOOLS: ToolDef[] = [
           enum: ['fact', 'preference', 'decision', 'event', 'insight', 'doc', 'task', 'question'],
         }),
         limit: { type: 'integer', description: 'Max results (default 8).', minimum: 1, maximum: 50 },
+        tight: {
+          type: 'boolean',
+          description:
+            'Return only the results clustered closest to the best match, instead of the ' +
+            'full ranked list. Use when you want an answer rather than a survey.',
+        },
       },
       required: ['query'],
     },
@@ -116,6 +142,7 @@ export const TOOLS: ToolDef[] = [
         workspaceId: wsId,
         kind: args.kind,
         limit: args.limit ?? 8,
+        relevanceWindow: args.tight ? RELEVANCE_WINDOW : undefined,
       });
 
       if (hits.length === 0) {
@@ -134,9 +161,26 @@ export const TOOLS: ToolDef[] = [
         return `**${h.title}** [${meta}]\n${h.body}\n_id: ${h.id}_`;
       });
 
+      // Warn when even the best match is distant. A model handed six mediocre
+      // results with no signal about their quality will answer confidently from
+      // them; told the retrieval was weak, it hedges or asks. This is the
+      // cheapest hallucination guard in the system and it belongs here, where
+      // every client inherits it, rather than in any one of them.
+      const best = hits[0].distance ?? 0;
+      const weak = best > WEAK_MATCH_DISTANCE;
+      const header = weak
+        ? `No memory closely matches "${args.query}". The nearest ${hits.length} ` +
+          `${hits.length === 1 ? 'is' : 'are'} below — treat them as loosely related, ` +
+          `and say so rather than answering as if they were on point:`
+        : `${hits.length} result${hits.length === 1 ? '' : 's'} for "${args.query}":`;
+
       return {
-        text: `${hits.length} result${hits.length === 1 ? '' : 's'} for "${args.query}":\n\n${lines.join('\n\n')}`,
-        structured: { results: hits.map((h) => ({ id: h.id, title: h.title, score: h.score })) },
+        text: `${header}\n\n${lines.join('\n\n')}`,
+        structured: {
+          weak,
+          bestDistance: Number(best.toFixed(3)),
+          results: hits.map((h) => ({ id: h.id, title: h.title, score: h.score })),
+        },
         count: hits.length,
       };
     },
