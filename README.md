@@ -55,7 +55,6 @@ it is the real system with real imported data, read-only for visitors:
    latency percentiles. The CockroachDB panel runs `EXPLAIN` live and shows
    whether the vector index was chosen.
 5. **Export** (top of memories) — take the whole dataset home as JSON.
-
 ---
 
 ## Run it yourself — the complete guide
