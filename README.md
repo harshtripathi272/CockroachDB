@@ -55,6 +55,36 @@ it is the real system with real imported data, read-only for visitors:
    latency percentiles. The CockroachDB panel runs `EXPLAIN` live and shows
    whether the vector index was chosen.
 5. **Export** (top of memories) — take the whole dataset home as JSON.
+
+---
+
+## What it looks like
+
+**connect** — one address, and a list of connected tools that turns green only
+when a client genuinely handshakes.
+
+![The connect page](docs/screenshots/01-connect.png)
+
+**about you** — a profile assembled from your memories by rules, not a language
+model, so it says the same thing twice and every claim can be traced.
+
+![The generated profile](docs/screenshots/02-about-you.png)
+
+**connections** — the people, tools and projects that keep coming up, and what
+each is linked to.
+
+![The entity graph](docs/screenshots/03-connections.png)
+
+**activity** — every read and write any tool has ever made, with latency and
+error rates. The fastest way to prove a connection is real.
+
+![Observability](docs/screenshots/04-activity.png)
+
+**fill the gaps** — Orbis works out what it does not know about you and asks.
+Answer once here and every connected tool has it from the next message on.
+
+![Interview questions](docs/screenshots/05-fill-the-gaps.png)
+
 ---
 
 ## Run it yourself — the complete guide
