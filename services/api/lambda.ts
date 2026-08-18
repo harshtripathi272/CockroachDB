@@ -259,18 +259,32 @@ export async function handler(event: LambdaEvent): Promise<LambdaResult> {
 
   await handleHttp(req as unknown as IncomingMessage, res as unknown as ServerResponse);
 
-  const bodyStr = captured.body.toString('utf8');
-  // The console's static HTML/JS/CSS are served as UTF-8 text; JSON too. If
-  // the handler wrote a Buffer that isn't valid UTF-8 we'd need base64, but
-  // every response Orbis produces is text, so return plain body.
+  const contentType = captured.headers['content-type'] ?? 'text/plain; charset=utf-8';
+
+  /**
+   * Binary responses must be base64-encoded, or API Gateway mangles them.
+   *
+   * This used to return `body.toString('utf8')` unconditionally, on the
+   * reasoning that everything Orbis serves is text. That was true until the
+   * console started shipping its own webfonts: a .woff2 run through
+   * `toString('utf8')` has every byte that is not valid UTF-8 replaced with
+   * U+FFFD, so the file arrives the right length and completely corrupt, and
+   * the browser silently falls back to a system font.
+   *
+   * It fails only in production — locally the same handler writes the Buffer
+   * straight to a socket and never round-trips through a string — which is the
+   * worst shape a bug can have. The check is on content type rather than on
+   * "does this Buffer survive a round trip", because the answer has to be
+   * decided before the damage is done.
+   */
+  const isText =
+    /^(text\/|application\/(json|javascript|xml)|image\/svg)/.test(contentType);
+
   return {
     statusCode: captured.statusCode,
-    headers: {
-      ...captured.headers,
-      'content-type': captured.headers['content-type'] ?? 'text/plain; charset=utf-8',
-    },
-    body: bodyStr,
-    isBase64Encoded: false,
+    headers: { ...captured.headers, 'content-type': contentType },
+    body: isText ? captured.body.toString('utf8') : captured.body.toString('base64'),
+    isBase64Encoded: !isText,
   };
 }
 

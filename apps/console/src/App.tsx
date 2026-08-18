@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from './lib/api.ts';
 import type { Bootstrap } from './lib/api.ts';
 import { useAsync, usePoll, useToasts } from './lib/ui.tsx';
+import { Icon } from './lib/icons.tsx';
 import { Setup } from './views/Setup.tsx';
 import { Profile } from './views/Profile.tsx';
 import { Train } from './views/Train.tsx';
@@ -15,21 +16,66 @@ type ViewId =
   | 'setup' | 'chat' | 'profile' | 'train' | 'memories'
   | 'workspaces' | 'graph' | 'observability';
 
+/**
+ * The navigation, and the one sentence each page opens with.
+ *
+ * `label` is what the tab is called. `lede` is what the page is *for*, said
+ * plainly enough that someone who has never seen this before knows whether
+ * they are in the right place. Both are written to a deliberate voice: short
+ * sentences, no jargon, lowercase where it can be — "connections", not "graph";
+ * "activity", not "observability".
+ *
+ * The old labels were accurate and useless. "Signals" is a word that means
+ * something to whoever built it and nothing to anyone else, and a person who
+ * has to guess what a tab does has already been failed by it.
+ */
 const VIEWS: Array<{
   id: ViewId;
   label: string;
   icon: string;
   group: string;
-  subtitle: string;
+  lede: React.ReactNode;
 }> = [
-  { id: 'setup',        label: 'Setup',      icon: '◎', group: 'Start',  subtitle: 'Connect your tools to one memory' },
-  { id: 'chat',         label: 'Chat',       icon: '◐', group: 'Start',  subtitle: 'Talk to your memory, with every tool' },
-  { id: 'profile',      label: 'Profile',    icon: '◍', group: 'You',    subtitle: 'What Orbis knows about you' },
-  { id: 'train',        label: 'Train',      icon: '◔', group: 'You',    subtitle: 'Fill the gaps in your profile' },
-  { id: 'memories',     label: 'Memories',   icon: '≡', group: 'Memory', subtitle: 'Everything, searchable' },
-  { id: 'workspaces',   label: 'Workspaces', icon: '▤', group: 'Memory', subtitle: 'Projects and folders' },
-  { id: 'graph',        label: 'Graph',      icon: '◈', group: 'Memory', subtitle: 'How it all connects' },
-  { id: 'observability',label: 'Signals',    icon: '◊', group: 'System', subtitle: 'What your agents are doing' },
+  {
+    id: 'setup', label: 'connect', icon: 'plug', group: 'start here',
+    lede: <>Paste one address into Claude, Cursor or ChatGPT. From then on they read
+      and write the <strong>same memory</strong> — no copying between tools.</>,
+  },
+  {
+    id: 'chat', label: 'ask', icon: 'chat', group: 'start here',
+    lede: <>Ask a question and it searches everything you have saved. It shows you the
+      entries it used, so you can check the answer rather than trust it.</>,
+  },
+  {
+    id: 'profile', label: 'about you', icon: 'person', group: 'you',
+    lede: <>What your tools have worked out about you, built only from things you saved.
+      This is what a brand-new chat gets handed, so you never explain yourself twice.</>,
+  },
+  {
+    id: 'train', label: 'fill the gaps', icon: 'question', group: 'you',
+    lede: <>Questions nothing has answered yet. Answer one here and{' '}
+      <strong>every connected tool</strong> knows it from the next message on.</>,
+  },
+  {
+    id: 'memories', label: 'memories', icon: 'list', group: 'your memory',
+    lede: <>Everything you have saved, newest first. Search works by meaning, so
+      “how long to get my money back” finds a note about refunds.</>,
+  },
+  {
+    id: 'workspaces', label: 'projects', icon: 'folders', group: 'your memory',
+    lede: <>Keep work, side projects and personal life apart. A tool can be pointed at
+      one project so it only ever sees what is relevant to it.</>,
+  },
+  {
+    id: 'graph', label: 'connections', icon: 'nodes', group: 'your memory',
+    lede: <>The people, tools and projects that keep coming up in your memories, and
+      what each one is linked to.</>,
+  },
+  {
+    id: 'observability', label: 'activity', icon: 'pulse', group: 'behind the scenes',
+    lede: <>Every time a tool read or wrote something. The quickest way to check that a
+      connection is genuinely working.</>,
+  },
 ];
 
 export default function App() {
@@ -80,7 +126,7 @@ export default function App() {
 
   // The connection indicator and counters need to notice a new client without
   // a manual refresh — connecting a tool in another window is the moment the
-  // Setup page is meant to react to.
+  // Connect page is meant to react to.
   usePoll(boot.reload, 6000, view === 'setup' || view === 'observability');
 
   const current = VIEWS.find((v) => v.id === view)!;
@@ -125,9 +171,9 @@ export default function App() {
                     key={v.id}
                     className={`nav-item${view === v.id ? ' active' : ''}`}
                     onClick={() => go(v.id)}
-                    title={v.subtitle}
+                    aria-current={view === v.id ? 'page' : undefined}
                   >
-                    <span className="ico">{v.icon}</span>
+                    <Icon name={v.icon} />
                     <span>{v.label}</span>
                     {n !== undefined && <span className="count">{n}</span>}
                   </button>
@@ -142,44 +188,44 @@ export default function App() {
             className="nav-item"
             onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
           >
-            <span className="ico">{theme === 'dark' ? '☾' : '☀'}</span>
-            <span>{theme === 'dark' ? 'Dark' : 'Light'}</span>
+            <Icon name={theme === 'dark' ? 'moon' : 'sun'} />
+            <span>{theme === 'dark' ? 'dark' : 'light'}</span>
           </button>
         </div>
       </nav>
 
       <main className="main">
-        <header className="header">
-          <h1>{current.label}</h1>
-          <span className="sub">{current.subtitle}</span>
-          <div className="spacer" />
-
-          {boot.data && boot.data.workspaces.length > 0 && (
-            <select
-              className="input"
-              style={{ width: 'auto', minWidth: 150, fontSize: 13 }}
-              value={workspace ?? ''}
-              onChange={(e) => setWorkspace(e.target.value || null)}
-              title="Scope this view to one workspace"
-            >
-              <option value="">All workspaces</option>
-              {boot.data.workspaces.map((w) => (
-                <option key={w.id} value={w.id}>
-                  {w.name} ({w.memoryCount ?? 0})
-                </option>
-              ))}
-            </select>
-          )}
-        </header>
-
         <div className={`content${view === 'graph' || view === 'observability' || view === 'chat' ? ' wide' : ''}`}>
+          <div className="page-head">
+            <div className="page-head-row">
+              <h1>{current.label}</h1>
+              {boot.data && boot.data.workspaces.length > 0 && (
+                <label className="ws-pick">
+                  <span>showing</span>
+                  <select
+                    value={workspace ?? ''}
+                    onChange={(e) => setWorkspace(e.target.value || null)}
+                  >
+                    <option value="">everything</option>
+                    {boot.data.workspaces.map((w) => (
+                      <option key={w.id} value={w.id}>
+                        {w.name} ({w.memoryCount ?? 0})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+            </div>
+            <div className="lede">{current.lede}</div>
+          </div>
+
           {boot.error && (
             <div className="banner danger">
               <span className="dot" />
               <div className="body">
-                <strong>Cannot reach the Orbis API.</strong> {boot.error}
+                <strong>Can’t reach Orbis.</strong> {boot.error}
                 <div className="faint" style={{ marginTop: 4 }}>
-                  Is the server running? <code>npm run api</code>
+                  The server may not be running. Try <code>npm run api</code>.
                 </div>
               </div>
             </div>
@@ -189,9 +235,9 @@ export default function App() {
             <div className="banner warn">
               <span className="dot" />
               <div className="body">
-                <strong>Search is running in degraded mode.</strong> No semantic model is
-                available, so recall matches shared vocabulary only — it will find
-                “refund” from “refund”, but never from “reimbursement”.
+                <strong>Search is only matching exact words right now.</strong> The model that
+                understands meaning isn’t loaded, so “refund” will find “refund” but not
+                “reimbursement”.
                 <div className="faint" style={{ marginTop: 3 }}>{boot.data.embedder.reason}</div>
               </div>
             </div>
@@ -229,7 +275,7 @@ export default function App() {
           {!boot.data && !boot.error && (
             <div className="grid-3">
               {[0, 1, 2].map((i) => (
-                <div key={i} className="skeleton" style={{ height: 82 }} />
+                <div key={i} className="skeleton" style={{ height: 96 }} />
               ))}
             </div>
           )}

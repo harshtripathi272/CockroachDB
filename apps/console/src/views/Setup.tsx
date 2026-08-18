@@ -240,8 +240,8 @@ export function Setup({
       {/* --------------------------------------------------------- endpoint */}
       <div className="card">
         <div className="card-head">
-          <h3>Your endpoint</h3>
-          <span className="hint">the same URL for every tool</span>
+          <h3>1 &middot; Your address</h3>
+          <span className="hint">one link, the same for every tool</span>
           <div className="spacer" />
           <Badge tone={boot.target === 'cloud' ? 'accent' : undefined}>{boot.target}</Badge>
         </div>
@@ -275,8 +275,8 @@ export function Setup({
       {/* ----------------------------------------------------------- client */}
       <div className="card">
         <div className="card-head">
-          <h3>Connect a tool</h3>
-          <span className="hint">pick yours — the config is exact, paste it as-is</span>
+          <h3>2 &middot; Paste it into your tool</h3>
+          <span className="hint">pick yours — copy the block exactly as it is</span>
         </div>
 
         <div className="card-body col" style={{ gap: 12 }}>
@@ -320,11 +320,11 @@ export function Setup({
       {/* ------------------------------------------------------ connections */}
       <div className="card">
         <div className="card-head">
-          <h3>Connected tools</h3>
+          <h3>3 &middot; Check it worked</h3>
           <span className="hint">
             {connected.length === 0
-              ? 'waiting for a first handshake…'
-              : 'recorded from real MCP handshakes'}
+              ? 'nothing has connected yet — this updates on its own'
+              : 'these tools really did connect; nothing here is typed in by hand'}
           </span>
           <div className="spacer" />
           {connected.length === 0 ? (
@@ -376,8 +376,8 @@ export function Setup({
       {/* ----------------------------------------------------------- tokens */}
       <div className="card">
         <div className="card-head">
-          <h3>Tokens</h3>
-          <span className="hint">stored as SHA-256 hashes, never in plaintext</span>
+          <h3>Your keys</h3>
+          <span className="hint">a key is how a tool proves it&rsquo;s yours &mdash; revoke one and that tool loses access immediately</span>
         </div>
         {!tokens.data?.length ? (
           <Empty title="No tokens yet" hint="Create one above to connect your first tool." />
@@ -427,13 +427,13 @@ export function Setup({
       {/* ---------------------------------------------------------- runtime */}
       <div className="card">
         <div className="card-head">
-          <h3>Runtime</h3>
-          <span className="hint">what is actually running, not what is configured</span>
+          <h3>What&rsquo;s running</h3>
+          <span className="hint">measured right now, not read from a config file</span>
         </div>
         <div className="card-body">
           <div className="grid-3">
             <div>
-              <div className="faint" style={{ fontSize: 11 }}>EMBEDDINGS</div>
+              <div className="faint" style={{ fontSize: 12.5 }}>Understanding meaning</div>
               <div style={{ fontWeight: 550, marginTop: 2 }}>{boot.embedder.label}</div>
               <div className="faint" style={{ fontSize: 11.5, marginTop: 2 }}>
                 {boot.embedder.semantic ? (
@@ -444,14 +444,14 @@ export function Setup({
               </div>
             </div>
             <div>
-              <div className="faint" style={{ fontSize: 11 }}>DATABASE</div>
+              <div className="faint" style={{ fontSize: 12.5 }}>Where it&rsquo;s stored</div>
               <div style={{ fontWeight: 550, marginTop: 2 }}>CockroachDB · {boot.target}</div>
               <div className="faint" style={{ fontSize: 11.5, marginTop: 2 }}>
                 {boot.counts.memories} memories · {boot.counts.entities} entities
               </div>
             </div>
             <div>
-              <div className="faint" style={{ fontSize: 11 }}>ACTIVITY</div>
+              <div className="faint" style={{ fontSize: 12.5 }}>Used so far</div>
               <div style={{ fontWeight: 550, marginTop: 2 }}>{boot.counts.calls} tool calls</div>
               <div className="faint" style={{ fontSize: 11.5, marginTop: 2 }}>
                 across {connected.length} client{connected.length === 1 ? '' : 's'}
@@ -462,7 +462,7 @@ export function Setup({
           {boot.embedder.rejected.length > 0 && (
             <div style={{ marginTop: 12 }}>
               <div className="faint" style={{ fontSize: 11, marginBottom: 4 }}>
-                PROVIDERS TRIED AND UNAVAILABLE
+                Also tried, and not available here
               </div>
               {boot.embedder.rejected.map((r) => (
                 <div key={r.id} className="faint" style={{ fontSize: 11.5 }}>
