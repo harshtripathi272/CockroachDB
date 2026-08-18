@@ -1,5 +1,7 @@
 # Orbis
 
+![Orbis — one memory, every agent, yours](docs/title-card.png)
+
 **One memory. Every agent. Yours.**
 
 Connect once. Every AI tool you use — Claude Code, Codex, Cursor, opencode,
