@@ -116,10 +116,20 @@ async function bootstrapEnv(): Promise<void> {
   const parsed = JSON.parse(res.SecretString) as {
     CLOUD_DATABASE_URL?: string;
     ROOT_CRT_B64?: string;
+    CRDB_CLOUD_API_KEY?: string;
+    CRDB_CLUSTER_ID?: string;
   };
   if (!parsed.CLOUD_DATABASE_URL) throw new Error(`secret ${secretName} missing CLOUD_DATABASE_URL`);
 
   process.env.CLOUD_DATABASE_URL = parsed.CLOUD_DATABASE_URL;
+
+  // The CockroachDB Cloud service-account key, for the managed MCP server.
+  // Optional — without it the Cloud MCP panel says so rather than failing — and
+  // in the secret rather than the function's environment for the same reason
+  // the connection string is: env vars on a function are visible to anyone who
+  // can describe it.
+  if (parsed.CRDB_CLOUD_API_KEY) process.env.CRDB_CLOUD_API_KEY = parsed.CRDB_CLOUD_API_KEY;
+  if (parsed.CRDB_CLUSTER_ID) process.env.CRDB_CLUSTER_ID = parsed.CRDB_CLUSTER_ID;
 
   if (parsed.ROOT_CRT_B64) {
     const { writeFileSync, mkdirSync } = await import('node:fs');

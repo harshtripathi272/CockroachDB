@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { api } from '../lib/api.ts';
-import type { Bootstrap, ToolCall } from '../lib/api.ts';
+import type { Bootstrap, CloudStatus, ToolCall } from '../lib/api.ts';
 import { Badge, Bars, CodeBlock, Empty, relTime, useAsync, usePoll } from '../lib/ui.tsx';
 
 /**
@@ -11,13 +11,14 @@ import { Badge, Bars, CodeBlock, Empty, relTime, useAsync, usePoll } from '../li
  * empty until something has genuinely happened.
  */
 
-type Tab = 'activity' | 'tools' | 'growth' | 'database' | 'audit';
+type Tab = 'activity' | 'tools' | 'growth' | 'database' | 'cloud' | 'audit';
 
 const TABS: Array<[Tab, string]> = [
   ['activity', 'Activity'],
   ['tools', 'Latency'],
   ['growth', 'Growth'],
   ['database', 'CockroachDB'],
+  ['cloud', 'Cloud MCP'],
   ['audit', 'Audit'],
 ];
 
@@ -69,6 +70,7 @@ export function Observability({ boot }: { boot: Bootstrap }) {
       {tab === 'tools' && <Latency />}
       {tab === 'growth' && <Growth />}
       {tab === 'database' && <Database />}
+      {tab === 'cloud' && <CloudMcp />}
       {tab === 'audit' && <Audit />}
     </>
   );
@@ -437,6 +439,237 @@ function Database() {
       {d?.version && (
         <div className="faint mono" style={{ fontSize: 11.5 }}>{d.version}</div>
       )}
+    </>
+  );
+}
+
+/**
+ * Orbis as an MCP *client*.
+ *
+ * Every other panel in this console looks inward. This one looks out: it
+ * handshakes with CockroachDB Cloud's managed MCP server at
+ * https://cockroachlabs.cloud/mcp, lists the tools that server advertises, and
+ * lets you call the read-only ones and read the raw answer.
+ *
+ * The unconfigured state is a first-class state, not an error. It shows the
+ * endpoint, the tools Orbis would call, and the exact steps to produce a key —
+ * because "we integrate with X" and "we would integrate with X if you gave us a
+ * credential" are different claims and the panel should not blur them.
+ */
+function CloudMcp() {
+  const status = useAsync<CloudStatus>(() => api.cloud(), []);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [result, setResult] = useState<{ tool: string; text: string; ms: number; ok: boolean } | null>(null);
+  const [sql, setSql] = useState(
+    "SELECT id FROM memory WHERE status = 'active' ORDER BY embedding <=> '[0,0,0]'::VECTOR LIMIT 10",
+  );
+
+  const s = status.data;
+  const live = Boolean(s?.configured && s?.reachable);
+
+  async function run(tool: string, args: Record<string, unknown> = {}) {
+    setBusy(tool);
+    setResult(null);
+    try {
+      const r = await api.cloudCall(tool, args);
+      setResult({ tool, text: r.text, ms: r.latencyMs, ok: r.ok });
+    } catch (err) {
+      setResult({ tool, text: (err as Error).message, ms: 0, ok: false });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <>
+      <div className="card">
+        <div className="card-head">
+          <h3>CockroachDB Cloud, over its managed MCP server</h3>
+          <Badge tone={live ? 'ok' : s?.configured ? 'danger' : 'warn'}>
+            {live ? 'connected' : s?.configured ? 'refused' : 'not configured'}
+          </Badge>
+        </div>
+        <div className="card-body col" style={{ gap: 10 }}>
+          <div className="faint" style={{ fontSize: 12.5 }}>
+            Orbis is an MCP server — that is the whole product. This is the other direction:
+            Orbis connecting out as an MCP <em>client</em> to a server it does not own, so the
+            chat agent can ask CockroachDB about the cluster in the same turn it asks memory
+            about you.
+          </div>
+
+          <table>
+            <tbody>
+              <tr>
+                <td className="faint" style={{ width: 130 }}>Endpoint</td>
+                <td className="mono" style={{ fontSize: 12 }}>{s?.url ?? '—'}</td>
+              </tr>
+              <tr>
+                <td className="faint">Authentication</td>
+                <td>
+                  {s?.configured
+                    ? <>service-account API key <span className="mono faint">{s.keyHint}</span></>
+                    : <span className="faint">none — OAuth needs a browser, so a key is the only unattended option</span>}
+                </td>
+              </tr>
+              <tr>
+                <td className="faint">Scope</td>
+                <td className="mono" style={{ fontSize: 12 }}>
+                  {s?.clusterId
+                    ? <>cluster {s.clusterId} <span className="faint">(mcp-cluster-id header)</span></>
+                    : <span className="faint">every cluster the service account can reach</span>}
+                </td>
+              </tr>
+              {live && (
+                <>
+                  <tr>
+                    <td className="faint">Server</td>
+                    <td>
+                      {s?.server?.name ?? 'unnamed'}{' '}
+                      <span className="faint mono">{s?.server?.version ?? ''}</span>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="faint">Protocol</td>
+                    <td className="mono" style={{ fontSize: 12 }}>{s?.protocolVersion}</td>
+                  </tr>
+                </>
+              )}
+            </tbody>
+          </table>
+
+          {s && !live && (
+            <div className="banner warn" style={{ margin: 0 }}>
+              <span className="dot" />
+              <div className="body">
+                <strong>{s.error ?? s.reason}</strong>
+                {s.hint && <div className="faint" style={{ marginTop: 4 }}>{s.hint}</div>}
+                {!s.configured && (
+                  <div style={{ marginTop: 8 }}>
+                    <CodeBlock code={'CRDB_CLOUD_API_KEY=<service account secret> npm run api'} />
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          <div className="row">
+            <button className="btn" onClick={() => api.cloud(true).then(() => status.reload())}>
+              Probe again
+            </button>
+            {s && <span className="faint" style={{ fontSize: 12 }}>checked {relTime(s.checkedAt)}</span>}
+          </div>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card-head">
+          <h3>Tools</h3>
+          <span className="hint">
+            {live
+              ? `${s!.tools.length} advertised · ${s!.allowed.length} Orbis will call`
+              : 'what Orbis would call, once a key exists'}
+          </span>
+        </div>
+        <div className="card-body col" style={{ gap: 10 }}>
+          <div className="faint" style={{ fontSize: 12.5 }}>
+            The allowlist is enumerated in code, not derived from the server's own
+            read-only hints. The Cloud server will register <code className="mono">insert_rows</code>,{' '}
+            <code className="mono">update_rows</code> and <code className="mono">delete_rows</code> for
+            a service account with the roles to use them, and a chat agent that can be talked
+            into <code className="mono">delete_rows</code> on a production cluster is not a feature.
+          </div>
+          <table>
+            <thead>
+              <tr><th>Tool</th><th>Status</th><th>What it does</th></tr>
+            </thead>
+            <tbody>
+              {(s?.allowlist ?? []).map((name) => {
+                const found = s?.tools.find((t) => t.name === name);
+                return (
+                  <tr key={name}>
+                    <td className="mono" style={{ fontSize: 12 }}>{name}</td>
+                    <td>
+                      {!live
+                        ? <span className="faint">—</span>
+                        : found
+                          ? <Badge tone="ok">live</Badge>
+                          : <Badge tone="warn">not offered</Badge>}
+                    </td>
+                    <td className="faint truncate" style={{ fontSize: 12 }}>
+                      {found?.description ?? ''}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+
+          {live && s!.tools.some((t) => !s!.allowlist.includes(t.name)) && (
+            <div className="faint" style={{ fontSize: 12 }}>
+              Also advertised, and deliberately not called:{' '}
+              <span className="mono">
+                {s!.tools.filter((t) => !s!.allowlist.includes(t.name)).map((t) => t.name).join(', ')}
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card-head">
+          <h3>Run one</h3>
+          <span className="hint">{live ? 'live, against your cluster' : 'needs a key'}</span>
+        </div>
+        <div className="card-body col" style={{ gap: 10 }}>
+          <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>
+            {['get_cluster', 'list_cluster_nodes', 'list_databases', 'show_running_queries'].map((t) => (
+              <button
+                key={t}
+                className="btn"
+                disabled={!live || busy !== null}
+                onClick={() => run(t)}
+              >
+                {busy === t ? 'running…' : t}
+              </button>
+            ))}
+          </div>
+
+          <div className="col" style={{ gap: 6 }}>
+            <label className="faint" style={{ fontSize: 12 }}>
+              explain_query — ask CockroachDB's own tooling whether the vector index is used
+            </label>
+            <textarea
+              className="input mono"
+              rows={3}
+              style={{ fontSize: 12 }}
+              value={sql}
+              onChange={(e) => setSql(e.target.value)}
+            />
+            <div>
+              <button
+                className="btn primary"
+                disabled={!live || busy !== null}
+                onClick={() => run('explain_query', { query: sql })}
+              >
+                {busy === 'explain_query' ? 'running…' : 'Explain'}
+              </button>
+            </div>
+          </div>
+
+          {result && (
+            <div>
+              <div className="row" style={{ marginBottom: 5 }}>
+                <strong style={{ fontSize: 13 }} className="mono">{result.tool}</strong>
+                <Badge tone={result.ok ? 'ok' : 'danger'}>{result.ok ? 'ok' : 'failed'}</Badge>
+                {result.ms > 0 && <span className="faint" style={{ fontSize: 12 }}>{result.ms}ms</span>}
+              </div>
+              <CodeBlock code={result.text} />
+            </div>
+          )}
+
+          {!status.data && <div className="skeleton" style={{ height: 80 }} />}
+        </div>
+      </div>
     </>
   );
 }

@@ -49,6 +49,10 @@ four places because no two tools can share it.
   shows the tool trace under every reply. Model is selectable per conversation.
 - **Capture from a phone.** A Telegram bot runs the same tool layer, so
   something noted on a walk is in Claude Code an hour later.
+- **It is also an MCP client.** Orbis connects out to CockroachDB Cloud's
+  managed MCP server, so the chat agent can ask the cluster about itself in the
+  same turn it asks memory about you, and the console's index proof is run by
+  CockroachDB's own tooling rather than self-reported.
 
 ---
 
@@ -86,6 +90,10 @@ ANTHROPIC_API_KEY=sk-ant-... npm run api
 # Telegram. Get a token from @BotFather, then pair a chat by sending it
 # `/start <an Orbis token from Setup>`.
 TELEGRAM_BOT_TOKEN=... npm run telegram
+
+# CockroachDB Cloud's managed MCP server. Cloud Console -> Access Management ->
+# Service Accounts -> API key. Without it, Signals -> Cloud MCP says so.
+CRDB_CLOUD_API_KEY=... npm run api
 ```
 
 ---
@@ -94,14 +102,14 @@ TELEGRAM_BOT_TOKEN=... npm run telegram
 
 Stated plainly: what is wired and working, and what is not.
 
-### CockroachDB tools — 2 of 4 (2 required)
+### CockroachDB tools — 3 of 4 (2 required)
 
 | Tool | Status |
 |---|---|
 | **Distributed Vector Indexing** | ✅ **In use.** Two C-SPANN indexes with `vector_cosine_ops`. The console runs `EXPLAIN` live and labels whether the index was chosen, so index use is falsifiable rather than asserted. |
 | **Agent Skills Repo** | ✅ **Installed** — 34 skills via `npx skills add cockroachlabs/cockroachdb-skills`. |
-| Cloud Managed MCP Server | ❌ **Not wired.** Orbis exposes *its own* MCP server, which is a different thing. Consuming CockroachDB's is not done. |
-| ccloud CLI | ❌ Not used. |
+| **Cloud Managed MCP Server** | ✅ **Consumed as a client.** A hand-written Streamable-HTTP MCP client ([`services/cloud/mcp-client.ts`](services/cloud/mcp-client.ts)) handshakes with `https://cockroachlabs.cloud/mcp`, discovers its tools, and calls the read-only ones. Surfaced in **Signals → Cloud MCP**, and merged into the chat agent's tool list as `crdb_*`. Needs a service-account API key you supply — see below. |
+| ccloud CLI | ❌ Not used. Nothing in Orbis provisions or administers clusters, which is what that CLI is for. |
 
 ### AWS services — 4 in use (1 required)
 
@@ -134,6 +142,15 @@ consolidation — and all of it running on the deployed Lambda, not only locally
   honestly missing rather than faked.
 - **The Telegram bot needs a bot token**, from `@BotFather`. The code and its
   tests are complete; there is no hosted instance to point you at.
+- **The CockroachDB Cloud MCP client needs a service-account key.** The client
+  is real and tested — twenty-six tests, including a full handshake, `tools/list`
+  and `tools/call` over a real socket against Orbis's own MCP server, which is an
+  independently written implementation of the same spec. Against
+  `cockroachlabs.cloud/mcp` itself the tested assertion is narrower and stated as
+  such: the endpoint is live, speaks MCP, and refuses an unauthenticated
+  handshake with the documented bearer challenge. There is no key in this
+  environment, so the tool calls beyond that point are unexercised, and the
+  console shows "not configured" rather than implying otherwise.
 
 **Absent:**
 

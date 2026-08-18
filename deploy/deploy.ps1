@@ -50,8 +50,12 @@ Write-Host "--- Secrets Manager ---" -ForegroundColor Cyan
 $envFile = Join-Path $root ".env"
 if (-not (Test-Path $envFile)) { throw ".env not found - set CLOUD_DATABASE_URL first" }
 $cloudUrl = $null
+$crdbKey   = $null
+$crdbClust = $null
 foreach ($line in (Get-Content $envFile)) {
-  if ($line -match '^CLOUD_DATABASE_URL=(.+)$') { $cloudUrl = $Matches[1].Trim(); break }
+  if ($line -match '^CLOUD_DATABASE_URL=(.+)$') { $cloudUrl  = $Matches[1].Trim() }
+  if ($line -match '^CRDB_CLOUD_API_KEY=(.+)$') { $crdbKey   = $Matches[1].Trim() }
+  if ($line -match '^CRDB_CLUSTER_ID=(.+)$')    { $crdbClust = $Matches[1].Trim() }
 }
 if (-not $cloudUrl) { throw "CLOUD_DATABASE_URL missing in .env" }
 
@@ -59,7 +63,15 @@ $certPath = Join-Path $root "certs\root.crt"
 if (-not (Test-Path $certPath)) { throw "certs/root.crt not found" }
 $certB64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes($certPath))
 
-$secretJson = (@{ CLOUD_DATABASE_URL = $cloudUrl; ROOT_CRT_B64 = $certB64 } | ConvertTo-Json -Compress)
+# The CockroachDB Cloud service-account key rides in the same secret rather
+# than in the function's environment, for the same reason the connection string
+# does: environment variables are readable by anyone who can describe the
+# function. Both extra fields are optional - without the key, the Cloud MCP
+# panel reports itself unconfigured instead of failing.
+$secretPayload = @{ CLOUD_DATABASE_URL = $cloudUrl; ROOT_CRT_B64 = $certB64 }
+if ($crdbKey)   { $secretPayload.CRDB_CLOUD_API_KEY = $crdbKey }
+if ($crdbClust) { $secretPayload.CRDB_CLUSTER_ID    = $crdbClust }
+$secretJson = ($secretPayload | ConvertTo-Json -Compress)
 
 # Write BOM-free and pass via file:// so PowerShell cannot strip the JSON
 # quotes (an inline arg would store {KEY:value} without quotes, breaking

@@ -12,6 +12,12 @@
  * memory, `search_memory` still cannot return a retracted one, and every call
  * lands in `tool_call` so the Signals tab counts chat traffic alongside
  * everything else.
+ *
+ * When a CockroachDB Cloud service-account key is configured, the agent also
+ * holds that cluster's own MCP tools, discovered at runtime and prefixed
+ * `crdb_`. At that point a single turn can cross two MCP servers — Orbis's, for
+ * what the user knows, and CockroachDB's, for what the cluster is doing — which
+ * is the entire argument for the protocol being worth having.
  */
 
 import type { Session } from '../../packages/orbis-core/src/index.ts';
@@ -20,9 +26,27 @@ import { TOOLS, TOOLS_BY_NAME } from '../mcp/tools.ts';
 import type { ToolDef } from '../mcp/tools.ts';
 import { providerForModel } from './providers.ts';
 import type { Turn, ToolCall, ToolOutcome } from './providers.ts';
+import { cloudChatTools, isCloudTool } from '../cloud/cockroach.ts';
 
 /** Hidden ChatGPT aliases are noise here — the model gets the real nine. */
 const CHAT_TOOLS: ToolDef[] = TOOLS.filter((t) => !t.hidden);
+
+/**
+ * The nine memory tools, plus CockroachDB Cloud's if a service-account key is
+ * present.
+ *
+ * Assembled per turn rather than at module load because the Cloud tools are
+ * discovered over the network — `cloudChatTools` performs a `tools/list`
+ * against the managed MCP server (cached) and returns what that server actually
+ * advertises, filtered to the read-only allowlist. If no key is configured, or
+ * the endpoint is unreachable, the list is empty and the model never learns
+ * those tools existed. That is deliberately quieter than handing it tools that
+ * are going to fail.
+ */
+async function toolsForTurn(): Promise<ToolDef[]> {
+  const cloud = await cloudChatTools().catch(() => [] as ToolDef[]);
+  return cloud.length ? [...CHAT_TOOLS, ...cloud] : CHAT_TOOLS;
+}
 
 /**
  * The system prompt.
@@ -33,7 +57,7 @@ const CHAT_TOOLS: ToolDef[] = TOOLS.filter((t) => !t.hidden);
  * and a bug in context assembly shows up in both places at once instead of
  * hiding behind a special case.
  */
-function systemPrompt(workspaceName: string | null): string {
+function systemPrompt(workspaceName: string | null, hasCloud: boolean): string {
   return [
     'You are the memory agent for Orbis, a persistent memory shared across all of the',
     "user's AI tools. You are talking to the person that memory belongs to.",
@@ -51,8 +75,20 @@ function systemPrompt(workspaceName: string | null): string {
       ? `The active workspace is "${workspaceName}". Scope writes to it unless told otherwise.`
       : 'No workspace is selected; writes go to the default workspace.',
     '',
+    // Only mentioned when the tools are actually present. Describing tools the
+    // model does not have is how you teach it to hallucinate having used them.
+    hasCloud
+      ? [
+          'Tools named `crdb_*` reach CockroachDB Cloud through its own managed MCP server.',
+          'They report live cluster state — nodes, version, schemas, running statements, and',
+          'query plans — for the cluster this memory is stored in. They are read-only. Use',
+          'them for questions about the database itself, and say which tool you used, because',
+          'the answer came from CockroachDB rather than from memory.',
+          '',
+        ].join('\n')
+      : '',
     'Answer in plain prose. Cite what you retrieved rather than restating it at length.',
-  ].join('\n');
+  ].filter((line, i, all) => line !== '' || all[i - 1] !== '').join('\n');
 }
 
 export interface AgentStep {
@@ -89,6 +125,10 @@ export async function runAgent(opts: {
   const provider = providerForModel(opts.model);
   if (!provider) throw new Error(`unknown model: ${opts.model}`);
 
+  const tools = await toolsForTurn();
+  const byName = new Map(tools.map((t) => [t.name, t]));
+  const hasCloud = tools.length > CHAT_TOOLS.length;
+
   const turns: Turn[] = [...opts.history];
   const steps: AgentStep[] = [];
   const wrote: string[] = [];
@@ -98,9 +138,9 @@ export async function runAgent(opts: {
   for (let i = 0; i < MAX_ITERATIONS; i++) {
     const res = await provider.complete({
       model: opts.model,
-      system: systemPrompt(opts.workspaceName ?? null),
+      system: systemPrompt(opts.workspaceName ?? null, hasCloud),
       turns,
-      tools: CHAT_TOOLS,
+      tools,
     });
 
     usage.in += res.usage.in;
@@ -123,7 +163,7 @@ export async function runAgent(opts: {
     // every result must come back in a single turn — splitting them teaches the
     // model to stop batching.
     const results = await Promise.all(
-      res.toolCalls.map((call) => execute(call, opts, steps, wrote)),
+      res.toolCalls.map((call) => execute(call, byName, opts, steps, wrote)),
     );
     turns.push({ role: 'tool', results });
   }
@@ -141,12 +181,19 @@ export async function runAgent(opts: {
 
 async function execute(
   call: ToolCall,
+  byName: Map<string, ToolDef>,
   opts: Parameters<typeof runAgent>[0],
   steps: AgentStep[],
   wrote: string[],
 ): Promise<ToolOutcome> {
-  const tool = TOOLS_BY_NAME.get(call.name);
+  // The per-turn map, not the module-level TOOLS_BY_NAME, because the Cloud
+  // tools are discovered at runtime and only exist in the former.
+  const tool = byName.get(call.name) ?? TOOLS_BY_NAME.get(call.name);
   const started = Date.now();
+
+  // A call that left the building is recorded as such, so Signals can tell
+  // memory traffic from cluster traffic without parsing tool names.
+  const surface = isCloudTool(call.name) ? 'cloud-mcp' : 'console';
 
   if (!tool) {
     steps.push({ kind: 'tool', tool: call.name, input: call.input, ok: false, output: 'no such tool' });
@@ -163,7 +210,7 @@ async function execute(
     logToolCall(opts.db as any, {
       accountId: opts.accountId,
       client: 'orbis-chat',
-      surface: 'console',
+      surface,
       tool: call.name,
       ok: !r.isError,
       latencyMs,
@@ -190,7 +237,7 @@ async function execute(
     logToolCall(opts.db as any, {
       accountId: opts.accountId,
       client: 'orbis-chat',
-      surface: 'console',
+      surface,
       tool: call.name,
       ok: false,
       latencyMs,

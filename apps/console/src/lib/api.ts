@@ -112,6 +112,14 @@ export interface Bootstrap {
     reason: string;
     generative: boolean;
   };
+  /** Configuration only. `/cloud` performs the live probe. */
+  cloud: {
+    url: string;
+    configured: boolean;
+    keyHint: string | null;
+    clusterId: string | null;
+    reason: string;
+  };
   target: string;
   dev: boolean;
 }
@@ -197,6 +205,42 @@ export interface ChatMessage {
   content: string;
   tool_calls: AgentStep[] | null;
   created_at: string;
+}
+
+/** A tool advertised by a remote MCP server Orbis connects out to. */
+export interface RemoteTool {
+  name: string;
+  title?: string;
+  description?: string;
+  inputSchema?: Record<string, unknown>;
+  readOnly?: boolean;
+}
+
+export interface CloudStatus {
+  url: string;
+  configured: boolean;
+  keyHint: string | null;
+  clusterId: string | null;
+  reason: string;
+  /** null when no handshake was attempted, because there was no key to try. */
+  reachable: boolean | null;
+  server: { name?: string; title?: string; version?: string } | null;
+  protocolVersion: string | null;
+  tools: RemoteTool[];
+  allowed: string[];
+  error: string | null;
+  hint: string | null;
+  checkedAt: string;
+  /** Static: what Orbis is willing to call, sent even when unconfigured. */
+  allowlist: string[];
+}
+
+export interface CloudCallResult {
+  ok: boolean;
+  tool: string;
+  text: string;
+  structured?: Record<string, unknown>;
+  latencyMs: number;
 }
 
 const BASE = '/api/console';
@@ -343,4 +387,11 @@ export const api = {
   crdb: () => req<any>('/crdb'),
 
   plans: (q?: string) => req<{ plans: Record<string, string> }>(`/plans${qs({ q })}`),
+
+  cloud: (force = false) => req<CloudStatus>(`/cloud${qs({ force: force ? 1 : null })}`),
+
+  cloudCall: (tool: string, args: Record<string, unknown> = {}) =>
+    req<CloudCallResult>('/cloud/call', {
+      method: 'POST', body: JSON.stringify({ tool, args }),
+    }),
 };

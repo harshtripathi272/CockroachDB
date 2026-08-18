@@ -12,6 +12,7 @@ import { loadEnv, resolveConnectionString } from '../../scripts/env.mjs';
 import { runAgent } from '../agent/loop.ts';
 import { selectChatProviders, allModels } from '../agent/providers.ts';
 import type { Turn } from '../agent/providers.ts';
+import { cloudConfig, cloudStatus, cloudCall, ALLOWED_TOOLS } from '../cloud/cockroach.ts';
 
 /**
  * The Orbis server.
@@ -244,6 +245,9 @@ async function consoleApi(req: IncomingMessage, res: ServerResponse, url: URL): 
         reason: selectChatProviders().reason,
         generative: selectChatProviders().providers.some((p) => p.generative),
       },
+      // Configuration only — no network. The console asks /cloud for a live
+      // probe when it needs one, so bootstrap never waits on a third party.
+      cloud: cloudConfig(),
       target: TARGET,
       dev: DEV,
     });
@@ -617,6 +621,57 @@ async function consoleApi(req: IncomingMessage, res: ServerResponse, url: URL): 
 
   // ------------------------------------------------------- CockroachDB view
   if (route === '/crdb') return json(res, 200, await crdbSnapshot(accountId));
+
+  // ------------------------------------- CockroachDB Cloud, over its own MCP
+  //
+  // The other direction of the protocol: Orbis as an MCP *client*. Status is a
+  // live handshake plus tools/list against https://cockroachlabs.cloud/mcp,
+  // cached, and honest about being unconfigured rather than hiding the panel.
+  if (route === '/cloud' && req.method === 'GET') {
+    // `allowlist` is the static set Orbis is willing to call, sent even when
+    // unconfigured so the panel can show what the integration *would* do rather
+    // than an empty box next to a setup prompt.
+    return json(res, 200, {
+      ...(await cloudStatus(q.get('force') === '1')),
+      allowlist: ALLOWED_TOOLS,
+    });
+  }
+
+  if (route === '/cloud/call' && req.method === 'POST') {
+    const b = await body(req);
+    const tool = String(b.tool ?? '');
+    if (!(ALLOWED_TOOLS as readonly string[]).includes(tool)) {
+      return json(res, 400, { error: `tool not allowed: ${tool || '(none given)'}`, allowed: ALLOWED_TOOLS });
+    }
+
+    const started = Date.now();
+    try {
+      const result = await cloudCall(tool, (b.args ?? {}) as Record<string, unknown>);
+      // Logged like any other tool call, so a cluster question the user asks
+      // through the console appears in Signals next to the memory traffic.
+      logToolCall(orbis.db, {
+        accountId,
+        client: 'orbis-console',
+        surface: 'cloud-mcp',
+        tool: `crdb_${tool}`,
+        ok: result.ok,
+        latencyMs: result.latencyMs,
+      });
+      return json(res, 200, result);
+    } catch (err) {
+      const message = (err as Error).message;
+      logToolCall(orbis.db, {
+        accountId,
+        client: 'orbis-console',
+        surface: 'cloud-mcp',
+        tool: `crdb_${tool}`,
+        ok: false,
+        latencyMs: Date.now() - started,
+        error: message.slice(0, 300),
+      });
+      return json(res, 502, { error: message, tool });
+    }
+  }
 
   if (route === '/plans') {
     const [vec] = await orbis.embedder.embed([q.get('q') ?? 'example query']);
