@@ -12,7 +12,6 @@ endpoint backed by CockroachDB.
 **The story:** [BLOG.md](BLOG.md)
 
 
-
 ---
 
 ## What is this, in sixty seconds
