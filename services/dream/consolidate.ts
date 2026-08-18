@@ -263,6 +263,29 @@ async function mergeEntities(
 }
 
 /**
+ * Shorten to a length a human would have chosen.
+ *
+ * `slice(0, n)` cuts mid-word — the profile page was rendering a lede that
+ * ended "...and screenshots of console pag", which reads as a broken product
+ * rather than a long sentence. Prefer the last sentence that fits; failing
+ * that, the last whole word, with an ellipsis so the truncation is visibly
+ * deliberate.
+ */
+function trimTo(text: string, max: number): string {
+  const clean = text.trim();
+  if (clean.length <= max) return clean;
+
+  const cut = clean.slice(0, max);
+  const sentence = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('! '), cut.lastIndexOf('? '));
+  // Only honour a sentence break if it leaves something substantial behind;
+  // otherwise a single long opening sentence would collapse to almost nothing.
+  if (sentence > max * 0.6) return cut.slice(0, sentence + 1);
+
+  const word = cut.lastIndexOf(' ');
+  return `${(word > 0 ? cut.slice(0, word) : cut).replace(/[,;:\s]+$/, '')}…`;
+}
+
+/**
  * The profile page.
  *
  * Assembled from memories, with a citation recorded for each section so the
@@ -342,7 +365,7 @@ async function writeProfile(session: Session, log: (m: string) => void): Promise
     title: 'About you',
     kind: 'profile',
     bodyMd: md.join('\n'),
-    summary: summary.slice(0, 600),
+    summary: trimTo(summary, 600),
     generator: 'dream/deterministic',
     citations,
   });
@@ -402,7 +425,7 @@ async function writeWorkspacePages(session: Session, log: (m: string) => void): 
       kind: 'workspace',
       workspaceId: ws.id,
       bodyMd: md.join('\n'),
-      summary: `${mems.length} memories. ${topEntities.slice(0, 6).map((e) => e.name).join(', ')}`.slice(0, 400),
+      summary: trimTo(`${mems.length} memories. ${topEntities.slice(0, 6).map((e) => e.name).join(', ')}`, 400),
       generator: 'dream/deterministic',
       citations,
     });
